@@ -86,6 +86,11 @@ class Callback():
             logger.exception(f"异步触发回调{cls}失败: {e}")
             raise e
 
+    @classmethod
+    def get_all(cls) -> list[type[Callback]]:
+        """获取所有回调"""
+        return list(cls.__subclasses__())
+
 __all__ = [
     "Callback",
 ]
