@@ -1,12 +1,11 @@
-from router import TPLinkRouter
+from lan_router import create_router
 from settings import settings
 
 if __name__ == "__main__":
-    router = TPLinkRouter(
+    router = create_router(settings.router_vendor,
         hostname=settings.router_hostname,
         username=settings.router_username,
-        password=settings.router_password
-    )
+        password=settings.router_password)
 
     router.login()
 
