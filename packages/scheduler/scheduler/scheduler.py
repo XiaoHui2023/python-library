@@ -19,6 +19,8 @@ class Scheduler(BaseModel):
         """异步主循环"""
         self._running = True
         logger.info("Scheduler 启动")
+        first_tick = True
+    
         try:
             while self._running:
                 jobs = Job.get_all()
@@ -27,10 +29,12 @@ class Scheduler(BaseModel):
                 tasks = [
                     job.run()
                     for job in jobs
-                    if job.should_run()
+                    if (first_tick and job.immediate) or job.should_run()
                 ]
                 if tasks:
                     await asyncio.gather(*tasks, return_exceptions=True)
+
+                first_tick = False
                 await asyncio.sleep(self.interval)
         except asyncio.CancelledError:
             pass

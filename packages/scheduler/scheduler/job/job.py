@@ -35,8 +35,6 @@ class Job(BaseModel):
         clone._running = False
         Job._registry.append(clone)
         logger.debug(f"注册任务 {clone}")
-        if clone.immediate:
-            clone.run()
         return func
 
     def should_run(self) -> bool:
