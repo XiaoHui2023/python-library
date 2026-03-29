@@ -21,10 +21,9 @@ class TPLinkRouter(BaseRouter):
         for data in status.devices:
             type = getattr(data.type, "value", str(data.type))
             name = data.hostname or ""
-            active = data.active
             ip =  self._show(data.ipaddr)
             mac = self._show(data.macaddr)
-            device = Device(name=name, ip=ip, mac=mac, type=type, active=active)
+            device = Device(name=name, ip=ip, mac=mac, type=type)
             devices.append(device)
 
         return devices

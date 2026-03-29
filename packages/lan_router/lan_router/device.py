@@ -9,5 +9,3 @@ class Device(BaseModel):
     """设备MAC地址"""
     type: str
     """设备类型"""
-    active: bool
-    """设备在线状态"""
