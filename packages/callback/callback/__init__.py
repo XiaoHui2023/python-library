@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import ClassVar, Callable, TypeVar
 import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T", bound="Callback")
@@ -66,8 +67,14 @@ class Callback():
         try:
             self = cls(*args, **kwargs)
 
-            for func in cls.function_registry.get(cls.__name__, []):
-                func(self)
+            self.before_trigger()
+            funcs = cls.function_registry.get(cls.__name__, [])
+            with ThreadPoolExecutor() as executor:
+                futures = [executor.submit(func, self) for func in funcs]
+                for future in futures:
+                    future.result()
+            self.after_trigger()
+
             return self
         except Exception as e:
             logger.exception(f"触发回调{cls}失败: {e}")
@@ -79,12 +86,33 @@ class Callback():
         try:
             self = cls(*args, **kwargs)
 
-            for func in cls.function_registry.get(cls.__name__, []):
-                await func(self)
+            await self.before_atrigger()
+            funcs = cls.function_registry.get(cls.__name__, [])
+            tasks = [func(self) for func in funcs]
+            if tasks:
+                await asyncio.gather(*tasks)
+            await self.after_atrigger()
+
             return self
         except Exception as e:
             logger.exception(f"异步触发回调{cls}失败: {e}")
             raise e
+
+    def before_trigger(self) -> None:
+        """同步触发前钩子"""
+        pass
+
+    async def before_atrigger(self) -> None:
+        """异步触发前钩子"""
+        pass
+
+    def after_trigger(self) -> None:
+        """同步触发后钩子"""
+        pass
+
+    async def after_atrigger(self) -> None:
+        """异步触发后钩子"""
+        pass
 
     @classmethod
     def get_all(cls) -> list[type[Callback]]:
