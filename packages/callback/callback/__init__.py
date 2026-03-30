@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import ClassVar, Callable, TypeVar
 import asyncio
 import logging
+import inspect
 from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
@@ -77,7 +78,7 @@ class Callback():
             self.before_trigger()
             funcs = cls.function_registry.get(cls.__name__, [])
             with ThreadPoolExecutor() as executor:
-                futures = [executor.submit(func, self) for func in funcs]
+                futures = [executor.submit(self._call_registered, func, self) for func in funcs]
                 for future in futures:
                     future.result()
             self.after_trigger()
@@ -95,7 +96,7 @@ class Callback():
 
             await self.before_atrigger()
             funcs = cls.function_registry.get(cls.__name__, [])
-            tasks = [func(self) for func in funcs]
+            tasks = [self._acall_registered(func, self) for func in funcs]
             if tasks:
                 await asyncio.gather(*tasks)
             await self.after_atrigger()
@@ -120,6 +121,50 @@ class Callback():
     async def after_atrigger(self) -> None:
         """异步触发后钩子"""
         pass
+
+    @staticmethod
+    def _call_registered(func: Callable, cb: "Callback"):
+        """同步调用注册的函数，支持不传参数"""
+        try:
+            sig = inspect.signature(func)
+        except (TypeError, ValueError):
+            return func(cb)
+
+        params = list(sig.parameters.values())
+        positional = [
+            p for p in params
+            if p.kind in (
+                inspect.Parameter.POSITIONAL_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            )
+        ]
+        has_varargs = any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in params)
+
+        if has_varargs or len(positional) >= 1:
+            return func(cb)
+        return func()
+
+    @staticmethod
+    async def _acall_registered(func: Callable, cb: "Callback"):
+        """异步调用注册的函数，支持不传参数"""
+        try:
+            sig = inspect.signature(func)
+        except (TypeError, ValueError):
+            return await func(cb)
+
+        params = list(sig.parameters.values())
+        positional = [
+            p for p in params
+            if p.kind in (
+                inspect.Parameter.POSITIONAL_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            )
+        ]
+        has_varargs = any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in params)
+
+        if has_varargs or len(positional) >= 1:
+            return await func(cb)
+        return await func()
 
     @classmethod
     def get_all(cls) -> list[type[Callback]]:
