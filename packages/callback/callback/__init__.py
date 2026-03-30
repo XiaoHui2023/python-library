@@ -29,26 +29,32 @@ class Callback():
     _async: ClassVar[bool] = False
     """是否异步"""
 
-    def __init__(self, *args, **kwargs):
-        """初始化"""
+    def __new__(cls, *args, **kwargs):
+        """支持把 Callback 子类直接当装饰器使用"""
         if len(args) == 1 and not kwargs and callable(args[0]):
             func = args[0]
-            if self._async != asyncio.iscoroutinefunction(func):
-                raise ValueError(f"函数{func}是{'异步' if asyncio.iscoroutinefunction(func) else '同步'}，但回调{self.__class__.__name__}是{'异步' if self._async else '同步'}")
-            self.register(func)
-        else:
-            field_names = list(self.__class__.__annotations__.keys())
-            for i, arg in enumerate(args):
-                if i < len(field_names):
-                    setattr(self, field_names[i], arg)
-                else:
-                    raise ValueError(f"参数过多[{i}]: {arg}")
-            
-            for key, value in kwargs.items():
-                if key in field_names:
-                    setattr(self, key, value)
-                else:
-                    raise ValueError(f"未知属性[{key}]: {value}")
+            if cls._async != asyncio.iscoroutinefunction(func):
+                raise ValueError(
+                    f"函数{func}是{'异步' if asyncio.iscoroutinefunction(func) else '同步'}，"
+                    f"但回调{cls.__name__}是{'异步' if cls._async else '同步'}"
+                )
+            cls.register(func)
+            return func
+        return super().__new__(cls)
+
+    def __init__(self, *args, **kwargs):
+        """初始化事件实例"""
+        field_names = list(self.__class__.__annotations__.keys())
+        for i, arg in enumerate(args):
+            if i < len(field_names):
+                setattr(self, field_names[i], arg)
+            else:
+                raise ValueError(f"参数过多[{i}]: {arg}")
+        for key, value in kwargs.items():
+            if key in field_names:
+                setattr(self, key, value)
+            else:
+                raise ValueError(f"未知属性[{key}]: {value}")
 
     @classmethod
     def register(cls, func: Callable):
@@ -56,7 +62,8 @@ class Callback():
         try:
             if cls.__name__ not in cls.function_registry:
                 cls.function_registry[cls.__name__] = []
-            cls.function_registry[cls.__name__].append(func)
+            if func not in cls.function_registry[cls.__name__]:
+                cls.function_registry[cls.__name__].append(func)
         except Exception as e:
             logger.exception(f"注册函数{func}失败: {e}")
             raise e
