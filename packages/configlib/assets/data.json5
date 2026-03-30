@@ -1,0 +1,6 @@
+{
+    user: {
+      name: "alice",
+      age: 18,
+    },
+  }

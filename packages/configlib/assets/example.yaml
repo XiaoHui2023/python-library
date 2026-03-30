@@ -1,0 +1,14 @@
+app:
+  name: demo
+  version: "1.0"
+
+base: !include base.yaml
+json_data: !include data.json5
+toml_data: !include data.toml
+
+refs:
+  app_name: ${app.name}
+  base_title: ${base.title}
+  local:
+    name: child
+    parent_name: ${..name}
