@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 from pydantic import BaseModel, ConfigDict, PrivateAttr
+from typing import TypeVar
+T = TypeVar("T", bound="ConfigLoader")
 
 ReloadCallback = Callable[["ConfigLoader"], None]
 
@@ -20,10 +22,10 @@ class ConfigLoader(BaseModel):
 
     @classmethod
     def from_file(
-        cls,
+        cls: type[T],
         file_path: str | Path,
         on_update: ReloadCallback | None = None,
-    ) -> "ConfigLoader":
+    ) -> T:
         from . import load_config
 
         path = Path(file_path).resolve()
