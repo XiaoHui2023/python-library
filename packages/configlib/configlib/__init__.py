@@ -1,6 +1,7 @@
 from .json import is_json,load_json
 from .toml import is_toml,load_toml
 from .yaml import is_yaml,load_yaml
+from .loader import ConfigLoader
 
 def load_config(file_path:str) -> dict|list:
     """加载配置文件"""
@@ -15,4 +16,5 @@ def load_config(file_path:str) -> dict|list:
 
 __all__ = [
     "load_config",
+    "ConfigLoader",
 ]
