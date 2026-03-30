@@ -1,12 +1,12 @@
 from __future__ import annotations
-
+import inspect
 from pathlib import Path
 from typing import Callable
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 from typing import TypeVar
 T = TypeVar("T", bound="ConfigLoader")
 
-ReloadCallback = Callable[["ConfigLoader"], None]
+ReloadCallback = Callable[..., None]
 
 
 class ConfigLoader(BaseModel):
@@ -65,12 +65,39 @@ class ConfigLoader(BaseModel):
         if not isinstance(data, dict):
             raise TypeError(f"配置顶层必须是 dict，实际得到 {type(data).__name__}")
 
+        old = self.model_copy(deep=True)
         new_obj = self.__class__.model_validate(data)
 
         for field_name in self.__class__.model_fields:
             setattr(self, field_name, getattr(new_obj, field_name))
 
-        if self._on_update:
-            self._on_update(self)
+        self._call_update_callback(self, old)
 
         return True
+
+    def _call_update_callback(self, new: "ConfigLoader", old: "ConfigLoader") -> None:
+        """调用更新回调函数"""
+        if self._on_update is None:
+            return
+        callback = self._on_update
+        try:
+            sig = inspect.signature(callback)
+        except (TypeError, ValueError):
+            # 某些不可分析签名的可调用对象，退化成先传两个
+            callback(new, old)
+            return
+        params = list(sig.parameters.values())
+        positional = [
+            p for p in params
+            if p.kind in (
+                inspect.Parameter.POSITIONAL_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            )
+        ]
+        has_varargs = any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in params)
+        if has_varargs or len(positional) >= 2:
+            callback(new, old)
+        elif len(positional) == 1:
+            callback(new)
+        else:
+            callback()
