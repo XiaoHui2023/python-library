@@ -118,3 +118,8 @@ class Registry:
         """
         for name, entry in self._by_name.items():
             yield name, entry.cls
+
+__all__ = [
+    "Registry",
+    "Entry",
+]
