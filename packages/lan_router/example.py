@@ -13,7 +13,6 @@ if __name__ == "__main__":
     for i, device in enumerate(devices):
 
             print(f"[{i}] {device.name}")
-            print(f"  在线状态      : {device.active}")
             print(f"  连接类型      : {device.type}")
             print(f"  主机名        : {device.name}")
             print(f"  IP            : {device.ip}")
