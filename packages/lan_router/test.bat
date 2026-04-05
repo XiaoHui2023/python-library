@@ -7,4 +7,5 @@ if not exist .venv (
 
 call .venv\Scripts\activate.bat
 pip install -e .
-python example.py
+pip install -r requirements.txt
+python test.py
