@@ -3,8 +3,6 @@ from pydantic import BaseModel, Field, PrivateAttr
 from typing import Optional, Callable, Iterator
 from difflib import get_close_matches
 
-NAME_SEPARATOR = '.' # 名称分隔符
-
 class TreeModel(BaseModel):
     name: str = Field(..., description="节点名称")
     parent: Optional[TreeModel] = Field(None, description="父节点")
@@ -12,13 +10,15 @@ class TreeModel(BaseModel):
     """子节点映射表"""
     _on_delete: list[Callable[[], None]] = PrivateAttr(default_factory=list)
     """删除回调"""
+    _name_separator: str = PrivateAttr('.')
+    """名称分隔符"""
 
     @property
     def full_name(self) -> str:
         """获取节点完整名称"""
         if self.parent is None:
             return self.name
-        return f"{self.parent.full_name}{NAME_SEPARATOR}{self.name}"
+        return f"{self.parent.full_name}{self._name_separator}{self.name}"
 
     def add_child(self, child: TreeModel):
         """添加子节点"""
@@ -26,7 +26,7 @@ class TreeModel(BaseModel):
             raise ValueError(f"child {child.name!r} 已经有 parent")
         if child.name in self._to_children:
             raise ValueError(f"child {child.name!r} 已经是子节点")
-        if NAME_SEPARATOR in child.name:
+        if self._name_separator in child.name:
             raise ValueError(f"child {child.name!r} 不允许包含名称分隔符")
 
         # 设置父节点
@@ -119,7 +119,7 @@ class TreeModel(BaseModel):
                 return None
             
             next_level = self._to_children[next_name]
-            next_full_name = NAME_SEPARATOR.join(parts[1:])
+            next_full_name = self._name_separator.join(parts[1:])
             return next_level.find_child(next_full_name, recursive=recursive)
 
     def _relative_parts(self, full_name: str) -> list[str]:
@@ -132,7 +132,7 @@ class TreeModel(BaseModel):
         Returns:
             相对路径部分。
         """
-        return full_name.split(NAME_SEPARATOR)
+        return full_name.split(self._name_separator)
 
     def __iter__(self) -> Iterator[TreeModel]:
         return iter(self._to_children.values())
