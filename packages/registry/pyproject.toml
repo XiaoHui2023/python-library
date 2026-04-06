@@ -6,7 +6,12 @@ build-backend = "hatchling.build"
 name = "registry"
 version = "0.1.2"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "tree_model @ git+https://github.com/XiaoHui2023/python-library.git@main#subdirectory=packages/tree_model",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["registry"]
