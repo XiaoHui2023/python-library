@@ -6,6 +6,6 @@ if not exist .venv (
 )
 
 call .venv\Scripts\activate.bat
-pip install -e .
+python -m pip install -e .
 pip install -r requirements.txt
-python test.py
+python -m unittest discover -s tests -p "test_*.py"
