@@ -7,8 +7,12 @@ name = "tree-model"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
-    "pydantic>=2.10.0",
+    "reactive-model @ git+https://github.com/XiaoHui2023/python-library.git@main#subdirectory=packages/reactive_model",
+    "pydantic>=2.0.0",
 ]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["tree_model"]
