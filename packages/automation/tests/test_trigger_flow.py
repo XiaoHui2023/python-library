@@ -33,7 +33,7 @@ class TriggerFlowTests(unittest.TestCase):
             "entities": {"lamp": {"type": "lamp_log", "on": True}},
             "events": {"e1": {"type": "press"}},
             "conditions": {
-                "c1": {"type": "entity_expression", "expr": "{lamp.on}"},
+                "c1": {"type": "expression", "expr": "{lamp.on}"},
             },
             "actions": {
                 "a1": {
@@ -75,7 +75,7 @@ class TriggerFlowTests(unittest.TestCase):
             "entities": {"lamp": {"type": "lamp_log2", "on": False}},
             "events": {"e1": {"type": "press"}},
             "conditions": {
-                "c1": {"type": "entity_expression", "expr": "{lamp.on}"},
+                "c1": {"type": "expression", "expr": "{lamp.on}"},
             },
             "actions": {
                 "a1": {

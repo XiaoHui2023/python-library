@@ -1,6 +1,6 @@
 import ast
 import re
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from pydantic import PrivateAttr
 from automation.core import Condition
@@ -32,7 +32,7 @@ ALLOWED_AST_MODS = (
 
 class ExpressionCondition(Condition):
     _abstract: ClassVar[bool] = False
-    _type: ClassVar[str] = "entity_expression"
+    _type: ClassVar[str] = "expression"
 
     expr: str
     _tree = PrivateAttr(default=None)
@@ -45,7 +45,7 @@ class ExpressionCondition(Condition):
         self._build_ast()
 
     def check(self) -> bool:
-        return self._eval_expr()
+        return self._check_with_state({}, [])
 
     def _build_ast(self) -> None:
         parsed_expr, placeholders = self._prepare_expr(self.expr)
@@ -58,26 +58,23 @@ class ExpressionCondition(Condition):
         self._validate_ast(tree)
 
         self._tree = tree
-        self._compiled = compile(tree, "<entity_expression>", "eval")
+        self._compiled = compile(tree, "<expression>", "eval")
         self._placeholders = placeholders
 
     def _prepare_expr(self, expr: str) -> tuple[str, dict[str, str]]:
         placeholders: dict[str, str] = {}
 
         def replace(match):
-            path = match.group(1).strip()
-            self._validate_entity_path(path)
+            token = match.group(1).strip()
+            self._validate_placeholder(token)
             name = f"_v{len(placeholders)}"
-            placeholders[name] = path
+            placeholders[name] = token
             return name
 
         parsed_expr = PLACEHOLDER_RE.sub(replace, expr)
         return parsed_expr, placeholders
 
-    def _resolve_path(self, path: str):
-        if "." not in path:
-            raise ValueError(f"表达式变量必须是 '{{实体名.属性}}' 形式: {path!r}")
-
+    def _resolve_entity_path(self, path: str) -> Any:
         entity_name, attr_path = path.split(".", 1)
 
         try:
@@ -92,20 +89,86 @@ class ExpressionCondition(Condition):
 
         return value
 
-    def _validate_entity_path(self, path: str) -> None:
-        self._resolve_path(path)
+    def _resolve_condition(
+        self,
+        name: str,
+        cache: dict[str, bool],
+        stack: list[str],
+    ) -> bool:
+        if name in cache:
+            return cache[name]
+
+        if name in stack:
+            cycle = " -> ".join([*stack, name])
+            raise ValueError(f"条件循环依赖: {cycle}")
+
+        try:
+            condition = self._ctx.conditions[name]
+        except KeyError as e:
+            raise ValueError(f"条件 {name!r} 不存在") from e
+
+        if isinstance(condition, ExpressionCondition):
+            result = condition._check_with_state(cache, stack)
+        else:
+            stack.append(name)
+            try:
+                result = condition.check()
+            finally:
+                stack.pop()
+
+        if not isinstance(result, bool):
+            raise ValueError(f"条件 {name!r} 的结果必须是 bool，实际得到 {type(result).__name__}")
+
+        cache[name] = result
+        return result
+
+    def _resolve_placeholder(
+        self,
+        token: str,
+        cache: dict[str, bool],
+        stack: list[str],
+    ) -> Any:
+        if "." in token:
+            return self._resolve_entity_path(token)
+        return self._resolve_condition(token, cache, stack)
+
+    def _validate_placeholder(self, token: str) -> None:
+        if "." in token:
+            self._resolve_entity_path(token)
+            return
+
+        if token not in self._ctx.conditions:
+            raise ValueError(f"条件 {token!r} 不存在")
 
     def _validate_ast(self, tree: ast.AST) -> None:
         for node in ast.walk(tree):
             if not isinstance(node, ALLOWED_AST_MODS):
                 raise ValueError(f"表达式包含不允许的语法: {type(node).__name__}")
 
-    def _eval_expr(self) -> bool:
+    def _eval_expr(self, cache: dict[str, bool], stack: list[str]) -> bool:
         values = {}
-        for var_name, path in self._placeholders.items():
-            values[var_name] = self._resolve_path(path)
+        for var_name, token in self._placeholders.items():
+            values[var_name] = self._resolve_placeholder(token, cache, stack)
 
         result = eval(self._compiled, {"__builtins__": {}}, values)
         if not isinstance(result, bool):
             raise ValueError(f"表达式结果必须是 bool，实际得到 {type(result).__name__}")
+        return result
+
+    def _check_with_state(self, cache: dict[str, bool], stack: list[str]) -> bool:
+        name = self.instance_name
+        if name in cache:
+            return cache[name]
+
+        if name in stack:
+            cycle = " -> ".join([*stack, name])
+            raise ValueError(f"条件循环依赖: {cycle}")
+
+        stack.append(name)
+        try:
+            result = self._eval_expr(cache, stack)
+        finally:
+            stack.pop()
+
+        cache[name] = result
         return result
