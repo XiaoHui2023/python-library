@@ -78,8 +78,12 @@ class Registry(BaseModel):
         node.obj = obj
         return obj
 
-    def __call__(self, name: str, obj: Any) -> Any:
-        return self.register(name=name, obj=obj)
+    def __call__(self, name: str, obj: Any | None = None) -> Any:
+        if obj is not None:
+            return self.register(name=name, obj=obj)
+        def decorator(target: Any) -> Any:
+            return self.register(name=name, obj=target)
+        return decorator
 
     def namespace(self, full_name: str) -> "Registry":
         """命名空间"""
@@ -89,8 +93,9 @@ class Registry(BaseModel):
         namespace = f"{self._namespace}.{full_name}" if self._namespace else full_name
         return Registry(namespace=namespace, _root=self._root)
 
-    def get(self, full_name: str) -> Any:
+    def get(self, name: str) -> Any:
         """获取注册对象"""
+        full_name = self._full_name(name)
         node = self._find_node(full_name)
         if node is None or node.obj is None:
             suggested_name = self._suggest_name(full_name)
