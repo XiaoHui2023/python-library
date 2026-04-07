@@ -3,7 +3,7 @@ from __future__ import annotations
 from difflib import get_close_matches
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 from tree_model import TreeModel
 
 
@@ -11,13 +11,20 @@ class EntryNode(TreeModel):
     obj: Any | None = Field(default=None, description="注册对象")
 
 
-class Registry(BaseModel):
+class Registry:
     def __init__(
         self,
         namespace: str = "",
         *,
         _root: EntryNode | None = None,
     ) -> None:
+        """
+        Args:
+            namespace: 命名空间
+        Attributes:
+            _namespace: 命名空间
+            _root: 根节点
+        """
         self._namespace = namespace.strip(".")
         self._root = EntryNode(name="") if _root is None else _root
 
@@ -45,7 +52,8 @@ class Registry(BaseModel):
             node = found
         return node
 
-    def _iter_registered_names(self) -> list[str]:
+    def get_registered_names(self) -> list[str]:
+        """获取已注册的名称列表"""
         names: list[str] = []
 
         def walk(node: EntryNode) -> None:
@@ -62,7 +70,7 @@ class Registry(BaseModel):
     def _suggest_name(self, full_name: str) -> str | None:
         matches = get_close_matches(
             full_name,
-            self._iter_registered_names(),
+            self.get_registered_names(),
             n=1,
             cutoff=0.6,
         )
