@@ -1,20 +1,25 @@
 import os
-import tomli
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
 
-SUFFIXS = [
-    '.toml',
-]
+from .resolver import resolve_variables
 
-def is_toml(file_path:str) -> bool:
-    """判断文件是否为toml文件"""
-    return os.path.splitext(file_path)[1] in SUFFIXS
+SUFFIXES = {'.toml'}
 
-def load_toml(file_path:str) -> dict|list:
-    """加载toml文件"""
-    with open(file_path, "r", encoding="utf-8") as f:
-        return tomli.loads(f.read())
 
-__all__ = [
-    'is_toml',
-    'load_toml',
-]
+def is_toml(file_path: str) -> bool:
+    return os.path.splitext(file_path)[1] in SUFFIXES
+
+
+def load_toml(file_path: str) -> dict:
+    with open(file_path, "rb") as f:
+        data = tomllib.load(f)
+    return resolve_variables(data)
+
+def load_toml_raw(file_path: str) -> dict:
+    with open(file_path, "rb") as f:
+        return tomllib.load(f)
+
+__all__ = ['is_toml', 'load_toml', 'load_toml_raw']

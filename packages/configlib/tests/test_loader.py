@@ -66,6 +66,75 @@ class ConfiglibLoaderTests(unittest.TestCase):
             self.assertIs(cfg.debug, True)
             self.assertEqual(called, [("demo2", 9090, True)])
 
+    def test_from_file_missing_raises(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = Path(tmp) / "nope.json5"
+            with self.assertRaises(FileNotFoundError):
+                AppConfig.from_file(missing)
+
+    def test_from_file_rejects_non_dict_top_level(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "list.json5"
+            _write_text(path, "[1, 2, 3]")
+            with self.assertRaisesRegex(TypeError, "配置顶层必须是 dict"):
+                AppConfig.from_file(path)
+
+    def test_has_changed_detects_modification(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_path = root / "config.json5"
+            _write_text(
+                config_path,
+                """{ name: "a", port: 1, debug: false }""",
+            )
+            cfg = AppConfig.from_file(config_path)
+            self.assertFalse(cfg.has_changed())
+            time.sleep(0.01)
+            _write_text(
+                config_path,
+                """{ name: "b", port: 2, debug: true }""",
+            )
+            self.assertTrue(cfg.has_changed())
+
+    def test_on_update_two_arg_receives_old_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_path = root / "config.json5"
+            _write_text(
+                config_path,
+                """{ name: "first", port: 1, debug: false }""",
+            )
+            events: list[tuple[str, str]] = []
+
+            def on_update(new: AppConfig, old: AppConfig) -> None:
+                events.append((new.name, old.name))
+
+            cfg = AppConfig.from_file(config_path, on_update=on_update)
+            time.sleep(0.01)
+            _write_text(
+                config_path,
+                """{ name: "second", port: 1, debug: false }""",
+            )
+            self.assertTrue(cfg.reload())
+            self.assertEqual(events, [("second", "first")])
+
+    def test_on_update_zero_arg(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_path = root / "config.json5"
+            _write_text(config_path, """{ name: "x", port: 1, debug: false }""")
+            count = 0
+
+            def on_update() -> None:
+                nonlocal count
+                count += 1
+
+            cfg = AppConfig.from_file(config_path, on_update=on_update)
+            time.sleep(0.01)
+            _write_text(config_path, """{ name: "y", port: 1, debug: false }""")
+            self.assertTrue(cfg.reload())
+            self.assertEqual(count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

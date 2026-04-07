@@ -12,13 +12,9 @@ ReloadCallback = Callable[..., None]
 class ConfigLoader(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 
-    _file_path: Path = PrivateAttr()
+    _file_path: Path | None = PrivateAttr(default=None)
     _on_update: ReloadCallback | None = PrivateAttr(default=None)
     _file_state: tuple[int, int] | None = PrivateAttr(default=None)
-
-    def model_post_init(self, ctx) -> None:
-        # 这里只保留空实现，避免实例化时立刻 reload
-        pass
 
     @classmethod
     def from_file(
@@ -26,15 +22,11 @@ class ConfigLoader(BaseModel):
         file_path: str | Path,
         on_update: ReloadCallback | None = None,
     ) -> T:
-        from . import load_config
-
         path = Path(file_path).resolve()
         if not path.exists():
             raise FileNotFoundError(f"配置文件 {path} 不存在")
 
-        data = load_config(str(path))
-        if not isinstance(data, dict):
-            raise TypeError(f"配置顶层必须是 dict，实际得到 {type(data).__name__}")
+        data = cls._load_dict(path)
 
         obj = cls.model_validate(data)
         obj._file_path = path
@@ -42,28 +34,33 @@ class ConfigLoader(BaseModel):
         obj._file_state = obj._get_file_state()
         return obj
 
+    @staticmethod
+    def _load_dict(path: Path) -> dict:
+        from . import load_config
+        data = load_config(str(path))
+        if not isinstance(data, dict):
+            raise TypeError(f"配置顶层必须是 dict，实际得到 {type(data).__name__}")
+        return data
+
     def _get_file_state(self) -> tuple[int, int]:
         """获取文件状态"""
+        if self._file_path is None:
+            raise RuntimeError("此实例未绑定配置文件，请使用 from_file() 创建")
         stat = self._file_path.stat()
         return (stat.st_mtime_ns, stat.st_size)
 
     def has_changed(self) -> bool:
-        """判断配置文件是否发生变化"""
-        old_state = self._file_state
-        new_state = self._get_file_state()
-        self._file_state = new_state
-        return old_state is None or old_state != new_state
+        """判断配置文件是否发生变化（纯查询，不更新内部状态）"""
+        if self._file_path is None:
+            return False
+        return self._file_state is None or self._file_state != self._get_file_state()
 
     def reload(self) -> bool:
         """重新加载配置文件"""
-        from . import load_config
-
         if not self.has_changed():
             return False
 
-        data = load_config(str(self._file_path))
-        if not isinstance(data, dict):
-            raise TypeError(f"配置顶层必须是 dict，实际得到 {type(data).__name__}")
+        data = self._load_dict(self._file_path)
 
         old = self.model_copy(deep=True)
         new_obj = self.__class__.model_validate(data)
@@ -71,33 +68,37 @@ class ConfigLoader(BaseModel):
         for field_name in self.__class__.model_fields:
             setattr(self, field_name, getattr(new_obj, field_name))
 
-        self._call_update_callback(self, old)
+        self._file_state = self._get_file_state()
+        self._call_update_callback(old)
 
         return True
 
-    def _call_update_callback(self, new: "ConfigLoader", old: "ConfigLoader") -> None:
+    def _call_update_callback(self, old: "ConfigLoader") -> None:
         """调用更新回调函数"""
         if self._on_update is None:
             return
         callback = self._on_update
         try:
             sig = inspect.signature(callback)
-        except (TypeError, ValueError):
-            # 某些不可分析签名的可调用对象，退化成先传两个
-            callback(new, old)
-            return
-        params = list(sig.parameters.values())
-        positional = [
-            p for p in params
-            if p.kind in (
-                inspect.Parameter.POSITIONAL_ONLY,
-                inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            )
+        except (ValueError, TypeError):
+            for args in [(self, old), (self,), ()]:
+                try:
+                    callback(*args)
+                    return
+                except TypeError:
+                    continue
+            raise TypeError(f"无法调用回调函数 {callback!r}，请检查其参数签名")
+
+        params = [
+            p for p in sig.parameters.values()
+            if p.default is inspect.Parameter.empty
+            and p.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
         ]
-        has_varargs = any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in params)
-        if has_varargs or len(positional) >= 2:
-            callback(new, old)
-        elif len(positional) == 1:
-            callback(new)
+        if len(params) >= 2:
+            callback(self, old)
+        elif len(params) == 1:
+            callback(self)
         else:
             callback()
+
+__all__ = ["ConfigLoader"]
