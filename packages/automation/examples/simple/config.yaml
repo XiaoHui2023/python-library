@@ -1,0 +1,27 @@
+events:
+  heartbeat:
+    type: every
+    seconds: 5
+    immediate: true
+
+actions:
+  log_start:
+    type: log
+    info: "heartbeat fired, start waiting"
+
+  wait_2s:
+    type: delay
+    seconds: 2
+
+  log_finish:
+    type: log
+    info: "delay finished"
+
+triggers:
+  heartbeat_flow:
+    event: heartbeat
+    conditions: []
+    actions:
+      - log_start
+      - wait_2s
+      - log_finish

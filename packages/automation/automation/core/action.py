@@ -9,11 +9,11 @@ NAME_SPACE = "action"
 
 action_registry = Registry(NAME_SPACE)
 
+
 class Action(BaseAutomation):
     _abstract: ClassVar[bool] = True
     _registry: ClassVar[Registry] = action_registry
 
     @abstractmethod
-    async def run(self):
-        """执行动作"""
+    async def run(self) -> None:
         pass

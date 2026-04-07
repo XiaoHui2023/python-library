@@ -1,6 +1,7 @@
 from __future__ import annotations
-from typing import ClassVar
-
+import logging
+from typing import ClassVar, Literal, TYPE_CHECKING
+import asyncio
 from pydantic import Field, PrivateAttr
 from automation.core.base import BaseAutomation
 from automation.core.event import Event
@@ -8,48 +9,105 @@ from automation.core.condition import Condition
 from automation.core.action import Action
 from registry import Registry
 
+if TYPE_CHECKING:
+    from automation.hub import Hub
+
+logger = logging.getLogger(__name__)
 NAME_SPACE = "trigger"
 
 trigger_registry = Registry(NAME_SPACE)
 
 class Trigger(BaseAutomation):
-    _abstract: ClassVar[bool] = True
+    _type: ClassVar[str] = "trigger"
     _registry: ClassVar[Registry] = trigger_registry
+    _abstract: ClassVar[bool] = False
 
     event: str = Field(description="事件名称")
     conditions: list[str] = Field(default_factory=list, description="条件名称列表")
     actions: list[str] = Field(default_factory=list, description="动作名称列表")
+    mode: Literal["skip", "queue"] = Field(default="skip", description="并发策略")
 
     _event: Event | None = PrivateAttr(default=None)
     _conditions: list[Condition] = PrivateAttr(default_factory=list)
     _actions: list[Action] = PrivateAttr(default_factory=list)
+    _lock: asyncio.Lock = PrivateAttr(default_factory=asyncio.Lock)
+    _queue: asyncio.Queue[None] = PrivateAttr(default_factory=lambda: asyncio.Queue())
+    _worker_task: asyncio.Task | None = PrivateAttr(default=None)
+    _running_task: asyncio.Task | None = PrivateAttr(default=None)
 
-    def validate(self, ctx) -> None:
+    async def on_validate(self, hub: Hub) -> None:
         try:
-            self._event = ctx.events[self.event]
+            self._event = hub.events[self.event]
         except KeyError as e:
-            raise ValueError(f"事件 {self.event!r} 不存在") from e
+            raise ValueError(f"Event {self.event!r} not found") from e
 
         try:
-            self._conditions = [ctx.conditions[name] for name in self.conditions]
+            self._conditions = [hub.conditions[name] for name in self.conditions]
         except KeyError as e:
-            raise ValueError(f"条件 {e.args[0]!r} 不存在") from e
+            raise ValueError(f"Condition {e.args[0]!r} not found") from e
 
         try:
-            self._actions = [ctx.actions[name] for name in self.actions]
+            self._actions = [hub.actions[name] for name in self.actions]
         except KeyError as e:
-            raise ValueError(f"动作 {e.args[0]!r} 不存在") from e
+            raise ValueError(f"Action {e.args[0]!r} not found") from e
 
         if not self._actions:
-            raise ValueError("至少需要一个 action")
+            raise ValueError("At least one action is required")
 
-    def activate(self, ctx) -> None:
-        self._event.on_fire(self.run)
+    async def on_activate(self, hub: Hub) -> None:
+        if self._event is not None:
+            self._event.remove_listener(self.run)
+        if self.event not in hub.events:
+            raise ValueError(
+                f"Event {self.event!r} not found; was on_validate() called?"
+            )
+        self._event = hub.events[self.event]
+        self._event.add_listener(self.run)
 
-    async def run(self):
+    async def on_start(self) -> None:
+        if self.mode == "queue":
+            self._worker_task = asyncio.create_task(self._queue_worker())
+
+    async def on_stop(self) -> None:
+        for task in (self._worker_task, self._running_task):
+            if task and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+    async def run(self) -> None:
+        match self.mode:
+            case "skip":
+                if self._lock.locked():
+                    logger.debug(
+                        "Trigger %r is already running, skipping",
+                        self.instance_name,
+                    )
+                    return
+                self._running_task = asyncio.create_task(self._skip_run())
+                await self._running_task
+            case "queue":
+                await self._queue.put(None)
+
+    async def _skip_run(self) -> None:
+        async with self._lock:
+            await self._execute()
+
+    async def _queue_worker(self) -> None:
+        while True:
+            await self._queue.get()
+            try:
+                await self._execute()
+            except Exception:
+                logger.exception("Trigger %r execution failed", self.instance_name)
+            finally:
+                self._queue.task_done()
+
+    async def _execute(self) -> None:
         for condition in self._conditions:
-            if not condition.check():
+            if not await condition.check():
                 return
-
         for action in self._actions:
             await action.run()

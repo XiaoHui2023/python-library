@@ -8,6 +8,8 @@ version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
     "registry @ git+https://github.com/XiaoHui2023/python-library.git@main#subdirectory=packages/registry",
+    "scheduler @ git+https://github.com/XiaoHui2023/python-library.git@main#subdirectory=packages/scheduler",
+    "configlib @ git+https://github.com/XiaoHui2023/python-library.git@main#subdirectory=packages/configlib",
     "pydantic>=2.0.0",
 ]
 

@@ -1,28 +1,58 @@
 from __future__ import annotations
-from typing import ClassVar
+import logging
+from typing import ClassVar, TYPE_CHECKING
 from abc import ABC
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from registry import Registry
 
+if TYPE_CHECKING:
+    from automation.hub import Hub
+
+logger = logging.getLogger(__name__)
+
 class BaseAutomation(BaseModel, ABC):
+    model_config = ConfigDict(validate_assignment=True)
+
     _abstract: ClassVar[bool] = False
     _type: ClassVar[str]
     _registry: ClassVar[Registry]
 
     instance_name: str = Field(..., description="实例名")
 
+    _IMMUTABLE_FIELDS: ClassVar[frozenset[str]] = frozenset({"instance_name"})
+
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
 
-        # 如果子类没有显式定义 _abstract，则认为不是抽象类
         if cls.__dict__.get("_abstract", False):
             return
+        if not hasattr(cls, "_type") or not isinstance(getattr(cls, "_type", None), str):
+            raise TypeError(f"{cls.__name__} 必须定义 _type: ClassVar[str]")
         cls._registry.register(cls._type, cls)
 
-    def validate(self, ctx) -> None:
-        """只做校验，不产生副作用"""
+    async def on_validate(self, hub: Hub) -> None:
         pass
 
-    def activate(self, ctx) -> None:
-        """在全部校验通过后再做绑定、副作用注册"""
+    async def on_activate(self, hub: Hub) -> None:
         pass
+
+    async def on_update(self, hub: Hub) -> None:
+        pass
+
+    async def on_start(self) -> None:
+        pass
+
+    async def on_stop(self) -> None:
+        pass
+
+    async def update(self, hub: Hub, new_spec: dict) -> None:
+        for key, value in new_spec.items():
+            if key in self._IMMUTABLE_FIELDS:
+                continue
+            if key in self.__class__.model_fields:
+                setattr(self, key, value)
+            else:
+                logger.warning(
+                    "%s.%s: ignoring unknown field %r",
+                    self.__class__.__name__, self.instance_name, key,
+                )

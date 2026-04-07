@@ -3,8 +3,9 @@ from typing import ClassVar
 
 import automation  # noqa: F401
 
-from automation.builder import build_all, build_section
-from automation.context import AutomationContext
+import support
+
+from automation import loader
 from automation.core.entity import Entity
 
 
@@ -13,9 +14,9 @@ class SampleEntity(Entity):
     value: int = 0
 
 
-class BuilderTests(unittest.TestCase):
+class LoaderBuildSectionTests(unittest.TestCase):
     def test_build_section_creates_entity(self) -> None:
-        objs = build_section(
+        objs = loader.build_section(
             "entities",
             {"a": {"type": "sample_entity", "value": 42}},
         )
@@ -25,14 +26,16 @@ class BuilderTests(unittest.TestCase):
 
     def test_build_section_missing_type_raises(self) -> None:
         with self.assertRaises(ValueError) as ctx:
-            build_section("entities", {"x": {"value": 1}})
-        self.assertIn("缺少 type", str(ctx.exception))
+            loader.build_section("entities", {"x": {"value": 1}})
+        self.assertIn("missing required field 'type'", str(ctx.exception))
 
-    def test_build_all_empty_sections(self) -> None:
-        ctx = build_all({})
-        self.assertIsInstance(ctx, AutomationContext)
-        self.assertEqual(ctx.entities, {})
-        self.assertEqual(ctx.triggers, {})
+    def test_load_empty_config(self) -> None:
+        hub = support.run_hub({})
+        self.assertEqual(hub.entities, {})
+        self.assertEqual(hub.events, {})
+        self.assertEqual(hub.conditions, {})
+        self.assertEqual(hub.actions, {})
+        self.assertEqual(hub.triggers, {})
 
 
 if __name__ == "__main__":

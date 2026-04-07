@@ -4,33 +4,36 @@ from typing import ClassVar
 
 import automation  # noqa: F401
 
-from automation.builder import build_all
+from automation import loader
 from automation.core.entity import Entity
 from automation.core.event import Event
-from automation.core.trigger import Trigger
+from automation.hub import Hub
 
 
 class PressEvent(Event):
     _type: ClassVar[str] = "press"
 
 
-class FlowTrigger(Trigger):
-    _type: ClassVar[str] = "flow"
+_calls: list[str] = []
+
+
+class TriggerFlowLamp(Entity):
+    """单一实体类型，通过配置 on 与共享 _calls 验证是否执行 record。"""
+
+    _type: ClassVar[str] = "trigger_flow_lamp"
+    on: bool = False
+
+    def record(self) -> None:
+        _calls.append("done")
 
 
 class TriggerFlowTests(unittest.TestCase):
+    def setUp(self) -> None:
+        _calls.clear()
+
     def test_fire_runs_action_when_condition_true(self) -> None:
-        log: list[str] = []
-
-        class LampEntityWithLog(Entity):
-            _type: ClassVar[str] = "lamp_log"
-            on: bool = True
-
-            def record(self) -> None:
-                log.append("done")
-
         config = {
-            "entities": {"lamp": {"type": "lamp_log", "on": True}},
+            "entities": {"lamp": {"type": "trigger_flow_lamp", "on": True}},
             "events": {"e1": {"type": "press"}},
             "conditions": {
                 "c1": {"type": "expression", "expr": "{lamp.on}"},
@@ -45,7 +48,6 @@ class TriggerFlowTests(unittest.TestCase):
             },
             "triggers": {
                 "t1": {
-                    "type": "flow",
                     "event": "e1",
                     "conditions": ["c1"],
                     "actions": ["a1"],
@@ -53,26 +55,17 @@ class TriggerFlowTests(unittest.TestCase):
             },
         }
 
-        ctx = build_all(config)
-
         async def run() -> None:
-            await ctx.events["e1"].fire()
+            hub = Hub()
+            await loader.load(hub, config)
+            await hub.events["e1"].fire()
 
         asyncio.run(run())
-        self.assertEqual(log, ["done"])
+        self.assertEqual(_calls, ["done"])
 
     def test_fire_skips_action_when_condition_false(self) -> None:
-        log: list[str] = []
-
-        class LampEntityWithLog(Entity):
-            _type: ClassVar[str] = "lamp_log2"
-            on: bool = False
-
-            def record(self) -> None:
-                log.append("done")
-
         config = {
-            "entities": {"lamp": {"type": "lamp_log2", "on": False}},
+            "entities": {"lamp": {"type": "trigger_flow_lamp", "on": False}},
             "events": {"e1": {"type": "press"}},
             "conditions": {
                 "c1": {"type": "expression", "expr": "{lamp.on}"},
@@ -87,7 +80,6 @@ class TriggerFlowTests(unittest.TestCase):
             },
             "triggers": {
                 "t1": {
-                    "type": "flow",
                     "event": "e1",
                     "conditions": ["c1"],
                     "actions": ["a1"],
@@ -95,13 +87,13 @@ class TriggerFlowTests(unittest.TestCase):
             },
         }
 
-        ctx = build_all(config)
-
         async def run() -> None:
-            await ctx.events["e1"].fire()
+            hub = Hub()
+            await loader.load(hub, config)
+            await hub.events["e1"].fire()
 
         asyncio.run(run())
-        self.assertEqual(log, [])
+        self.assertEqual(_calls, [])
 
 
 if __name__ == "__main__":

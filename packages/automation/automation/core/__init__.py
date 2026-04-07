@@ -5,7 +5,7 @@ from .trigger import Trigger
 from .condition import Condition
 from .event import Event
 
-__all__= [
+__all__ = [
     "BaseAutomation",
     "Action",
     "Entity",

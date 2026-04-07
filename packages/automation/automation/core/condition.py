@@ -9,11 +9,11 @@ NAME_SPACE = "condition"
 
 condition_registry = Registry(NAME_SPACE)
 
+
 class Condition(BaseAutomation):
     _abstract: ClassVar[bool] = True
     _registry: ClassVar[Registry] = condition_registry
 
     @abstractmethod
-    def check(self) -> bool:
-        """判断条件是否成立"""
+    async def check(self) -> bool:
         raise NotImplementedError

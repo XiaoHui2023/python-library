@@ -8,6 +8,7 @@ NAME_SPACE = "entity"
 
 entity_registry = Registry(NAME_SPACE)
 
+
 class Entity(BaseAutomation):
     _abstract: ClassVar[bool] = True
     _registry: ClassVar[Registry] = entity_registry
