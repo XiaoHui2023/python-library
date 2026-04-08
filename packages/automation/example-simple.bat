@@ -6,4 +6,5 @@ if not exist .venv (
 )
 
 call .venv\Scripts\activate.bat
-python -m unittest discover -s tests -p "test_*.py"
+
+python examples/simple

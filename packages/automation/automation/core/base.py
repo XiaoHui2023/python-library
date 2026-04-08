@@ -1,8 +1,8 @@
 from __future__ import annotations
 import logging
-from typing import ClassVar, TYPE_CHECKING
+from typing import Any, ClassVar, TYPE_CHECKING
 from abc import ABC
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, PrivateAttr
 from registry import Registry
 
 if TYPE_CHECKING:
@@ -20,6 +20,7 @@ class BaseAutomation(BaseModel, ABC):
     instance_name: str = Field(..., description="实例名")
 
     _IMMUTABLE_FIELDS: ClassVar[frozenset[str]] = frozenset({"instance_name"})
+    _hub: Any = PrivateAttr(default=None)
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)

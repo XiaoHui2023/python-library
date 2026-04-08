@@ -2,6 +2,7 @@ import asyncio
 from enum import StrEnum
 from typing import Any, Literal, overload
 from .core import Entity, Event, Condition, Action, Trigger, BaseAutomation
+from .listener import AutomationListener
 
 class State(StrEnum):
     IDLE = "idle"
@@ -24,6 +25,8 @@ class Hub:
         self.state: State = State.IDLE
         self.stop_event: asyncio.Event = asyncio.Event()
         self.config: dict[str, Any] = {}
+        self.listener: AutomationListener = AutomationListener()
+
 
     @overload
     def section(self, name: Literal["entities"]) -> dict[str, Entity]: ...

@@ -25,6 +25,8 @@ class Event(BaseAutomation):
     _on_error: Callable[[Exception], Any] | None = PrivateAttr(default=None)
 
     async def fire(self):
+        if self._hub is not None:
+            self._hub.listener.on_event_fired(self.instance_name)
         tasks = []
         for callback in self._on_fire:
             try:

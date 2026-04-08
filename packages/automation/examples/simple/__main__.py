@@ -1,10 +1,19 @@
 import asyncio
-from automation import Assistant
+from pathlib import Path
+from automation import Assistant, ConsoleRenderer
 
 async def main():
-    assistant = Assistant()
-    await assistant.load("config.yaml",watch=True)
-    await assistant.run()
+    assistant = Assistant(listener=ConsoleRenderer())
+    config = Path(__file__).parent / "config.yaml"
+    await assistant.load(config)
+    try:
+        await assistant.run()
+    except asyncio.CancelledError:
+        pass
+    finally:
+        await assistant.stop()
 
-
-asyncio.run(main())
+try:
+    asyncio.run(main())
+except KeyboardInterrupt:
+    pass

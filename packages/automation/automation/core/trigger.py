@@ -1,5 +1,6 @@
 from __future__ import annotations
 import logging
+import time
 from typing import ClassVar, Literal, TYPE_CHECKING
 import asyncio
 from pydantic import Field, PrivateAttr
@@ -78,13 +79,12 @@ class Trigger(BaseAutomation):
                     pass
 
     async def run(self) -> None:
+        ln = self._hub.listener if self._hub else None
         match self.mode:
             case "skip":
                 if self._lock.locked():
-                    logger.debug(
-                        "Trigger %r is already running, skipping",
-                        self.instance_name,
-                    )
+                    if ln:
+                        ln.on_trigger_skipped(self.instance_name)
                     return
                 self._running_task = asyncio.create_task(self._skip_run())
                 await self._running_task
@@ -106,8 +106,46 @@ class Trigger(BaseAutomation):
                 self._queue.task_done()
 
     async def _execute(self) -> None:
+        ln = self._hub.listener if self._hub else None
+        t0 = time.perf_counter()
+
+        if ln:
+            ln.on_trigger_started(self.instance_name)
+
         for condition in self._conditions:
-            if not await condition.check():
+            passed = await condition.check()
+            if ln:
+                ln.on_condition_checked(
+                    self.instance_name, condition.instance_name, passed
+                )
+            if not passed:
+                if ln:
+                    ln.on_trigger_aborted(
+                        self.instance_name, condition.instance_name
+                    )
                 return
+
         for action in self._actions:
-            await action.run()
+            if ln:
+                ln.on_action_started(self.instance_name, action.instance_name)
+            t1 = time.perf_counter()
+            try:
+                await action.run()
+            except Exception as e:
+                if ln:
+                    ln.on_action_error(
+                        self.instance_name, action.instance_name, e
+                    )
+                    ln.on_trigger_error(self.instance_name, e)
+                raise
+            if ln:
+                ln.on_action_completed(
+                    self.instance_name,
+                    action.instance_name,
+                    time.perf_counter() - t1,
+                )
+
+        if ln:
+            ln.on_trigger_completed(
+                self.instance_name, time.perf_counter() - t0
+            )

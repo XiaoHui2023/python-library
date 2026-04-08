@@ -6,22 +6,24 @@ from pathlib import Path
 from typing import Any
 
 from configlib import load_config
+from watch_config import WatchConfig
+
 from automation.hub import Hub, State
 from automation.core import Entity, Event, Condition, Action, Trigger, BaseAutomation
-from automation.changelog import ChangeLog
-from automation import loader, updater, watcher, schema
+from automation import loader, updater, schema
+from automation.listener import AutomationListener
 
 logger = logging.getLogger(__name__)
 
-
 class Assistant:
     """自动化管家 — 统一入口"""
-
-    def __init__(self) -> None:
+    def __init__(self, listener: AutomationListener | None = None) -> None:
         self._hub = Hub()
-        self._watch_task: asyncio.Task | None = None
-        self._watch_path: Path | None = None
-        self._watch_interval: float = 2.0
+        if listener is not None:
+            self._hub.listener = listener
+        self._watcher: WatchConfig[dict] | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._reload_lock = asyncio.Lock()
 
     @property
     def entities(self) -> dict[str, Entity]:
@@ -54,7 +56,8 @@ class Assistant:
         config = _read_source(source)
         await loader.load(self._hub, config)
         if watch:
-            self._watch_path = Path(source)  # type: ignore[arg-type]
+            self._watcher = WatchConfig(Path(source), dict)
+            self._watcher(self._on_config_change)
         return self
 
     async def start(self) -> Assistant:
@@ -62,16 +65,16 @@ class Assistant:
             return self
         self._hub.state = State.RUNNING
         self._hub.stop_event.clear()
+        self._loop = asyncio.get_running_loop()
         for section_name in self._hub.SECTIONS:
             for obj in self._hub.section(section_name).values():
                 await obj.on_start()
-        if self._watch_path is not None:
-            self._start_watch()
-        logger.info("Assistant started")
+        if self._watcher is not None:
+            self._watcher.start()
+        self._hub.listener.on_start()
         return self
 
     async def run(self) -> Assistant:
-        """运行"""
         await self.start()
         await self._hub.stop_event.wait()
         return self
@@ -80,47 +83,46 @@ class Assistant:
         if self._hub.state != State.RUNNING:
             return
         self._hub.state = State.STOPPED
-        if self._watch_task and not self._watch_task.done():
-            self._watch_task.cancel()
+        if self._watcher:
+            self._watcher.stop()
         for section_name in reversed(self._hub.SECTIONS):
             for obj in self._hub.section(section_name).values():
                 await obj.on_stop()
         self._hub.stop_event.set()
-        logger.info("Assistant stopped")
+        self._hub.listener.on_stop()
 
-    async def update(self, source: str | Path | dict) -> ChangeLog:
-        """热更新"""
+    async def update(self, source: str | Path | dict) -> None:
+        """手动热更新"""
         new_config = _read_source(source)
-        old_config = self._hub.config
-        changelog = await updater.apply_diff(self._hub, old_config, new_config)
-        self._hub.config = new_config
-        if not changelog.is_empty:
-            logger.info("\n%s", changelog.format())
-        return changelog
+        await self._apply_reload(new_config)
 
     def watch(self, path: str | Path, interval: float = 2.0) -> Assistant:
-        """文件监控"""
-        self._watch_path = Path(path)
-        self._watch_interval = interval
+        """设置文件监控"""
+        if self._watcher:
+            self._watcher.stop()
+        self._watcher = WatchConfig(Path(path), dict, interval=interval)
+        self._watcher(self._on_config_change)
         if self._hub.state == State.RUNNING:
-            self._start_watch()
+            self._watcher.start()
         return self
 
-    def _start_watch(self) -> None:
-        if self._watch_task and not self._watch_task.done():
-            self._watch_task.cancel()
-        self._watch_task = asyncio.ensure_future(
-            watcher.watch_loop(
-                self._hub,
-                self._watch_path,  # type: ignore[arg-type]
-                self.update,
-                self._watch_interval,
-            )
+    def _on_config_change(self, cfg: dict, changelog) -> None:
+        if self._loop is None or self._loop.is_closed():
+            return
+        asyncio.run_coroutine_threadsafe(
+            self._apply_reload(cfg), self._loop
         )
+
+    async def _apply_reload(self, new_config: dict) -> None:
+        async with self._reload_lock:
+            old_config = self._hub.config
+            if old_config == new_config:
+                return
+            await updater.apply_diff(self._hub, old_config, new_config)
+            self._hub.config = new_config
 
     @staticmethod
     def export_schema() -> dict:
-        """导出 schema"""
         return schema.export_schema()
 
 

@@ -2,8 +2,8 @@
 cd /d %~dp0
 
 if not exist .venv (
-    call update.bat
+    python -m venv .venv
 )
 
 call .venv\Scripts\activate.bat
-python -m unittest discover -s tests -p "test_*.py"
+python -m pip install -e .

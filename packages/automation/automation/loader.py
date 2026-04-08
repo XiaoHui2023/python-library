@@ -56,6 +56,7 @@ async def load(hub: Hub, config: dict[str, Any]) -> None:
     try:
         for section_name in hub.SECTIONS:
             for obj in hub.section(section_name).values():
+                obj._hub = hub
                 await obj.on_validate(hub)
 
         for section_name in hub.SECTIONS:
