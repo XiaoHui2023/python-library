@@ -9,18 +9,21 @@ from configlib import load_config
 from watch_config import WatchConfig
 
 from automation.hub import Hub, State
-from automation.core import Entity, Event, Condition, Action, Trigger, BaseAutomation
+from automation.core import Entity, Event, Trigger, BaseAutomation
+from automation.core.composite_action import CompositeAction
 from automation import loader, updater, schema
-from automation.listener import AutomationListener
+from automation.listener import BaseListener
 
 logger = logging.getLogger(__name__)
 
+
 class Assistant:
-    """自动化管家 — 统一入口"""
-    def __init__(self, listener: AutomationListener | None = None) -> None:
+    def __init__(self, listeners: list[BaseListener] | BaseListener | None = None) -> None:
         self._hub = Hub()
-        if listener is not None:
-            self._hub.listener = listener
+        if listeners is not None:
+            if isinstance(listeners, BaseListener):
+                listeners = [listeners]
+            self._hub.listeners = listeners
         self._watcher: WatchConfig[dict] | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._reload_lock = asyncio.Lock()
@@ -34,11 +37,7 @@ class Assistant:
         return self._hub.events
 
     @property
-    def conditions(self) -> dict[str, Condition]:
-        return self._hub.conditions
-
-    @property
-    def actions(self) -> dict[str, Action]:
+    def actions(self) -> dict[str, CompositeAction]:
         return self._hub.actions
 
     @property
@@ -52,7 +51,9 @@ class Assistant:
         self, source: str | Path | dict, watch: bool = False
     ) -> Assistant:
         if watch and isinstance(source, dict):
-            raise TypeError("watch=True requires a file path, dict is not supported")
+            raise TypeError(
+                "watch=True requires a file path, dict is not supported"
+            )
         config = _read_source(source)
         await loader.load(self._hub, config)
         if watch:
@@ -66,12 +67,12 @@ class Assistant:
         self._hub.state = State.RUNNING
         self._hub.stop_event.clear()
         self._loop = asyncio.get_running_loop()
-        for section_name in self._hub.SECTIONS:
+        for section_name in self._hub.AUTOMATION_SECTIONS:
             for obj in self._hub.section(section_name).values():
                 await obj.on_start()
         if self._watcher is not None:
             self._watcher.start()
-        self._hub.listener.on_start()
+        self._hub.notify("on_start")
         return self
 
     async def run(self) -> Assistant:
@@ -85,11 +86,11 @@ class Assistant:
         self._hub.state = State.STOPPED
         if self._watcher:
             self._watcher.stop()
-        for section_name in reversed(self._hub.SECTIONS):
+        for section_name in reversed(self._hub.AUTOMATION_SECTIONS):
             for obj in self._hub.section(section_name).values():
                 await obj.on_stop()
         self._hub.stop_event.set()
-        self._hub.listener.on_stop()
+        self._hub.notify("on_stop")
 
     async def update(self, source: str | Path | dict) -> None:
         """手动热更新"""

@@ -4,10 +4,9 @@ import time
 from typing import ClassVar, Literal, TYPE_CHECKING
 import asyncio
 from pydantic import Field, PrivateAttr
-from automation.core.base import BaseAutomation
-from automation.core.event import Event
-from automation.core.condition import Condition
-from automation.core.action import Action
+from .base import BaseAutomation
+from .event import Event
+from .event_context import EventContext
 from registry import Registry
 
 if TYPE_CHECKING:
@@ -18,41 +17,46 @@ NAME_SPACE = "trigger"
 
 trigger_registry = Registry(NAME_SPACE)
 
+
 class Trigger(BaseAutomation):
     _type: ClassVar[str] = "trigger"
     _registry: ClassVar[Registry] = trigger_registry
     _abstract: ClassVar[bool] = False
 
     event: str = Field(description="事件名称")
-    conditions: list[str] = Field(default_factory=list, description="条件名称列表")
-    actions: list[str] = Field(default_factory=list, description="动作名称列表")
-    mode: Literal["skip", "queue"] = Field(default="skip", description="并发策略")
+    conditions: list[str] = Field(
+        default_factory=list,
+        description="条件表达式列表",
+    )
+    actions: list[dict] = Field(
+        default_factory=list,
+        description="动作规格列表",
+    )
+    mode: Literal["skip", "queue"] = Field(
+        default="skip", description="并发策略"
+    )
 
     _event: Event | None = PrivateAttr(default=None)
-    _conditions: list[Condition] = PrivateAttr(default_factory=list)
-    _actions: list[Action] = PrivateAttr(default_factory=list)
     _lock: asyncio.Lock = PrivateAttr(default_factory=asyncio.Lock)
-    _queue: asyncio.Queue[None] = PrivateAttr(default_factory=lambda: asyncio.Queue())
+    _queue: asyncio.Queue[EventContext | None] = PrivateAttr(
+        default_factory=asyncio.Queue
+    )
     _worker_task: asyncio.Task | None = PrivateAttr(default=None)
     _running_task: asyncio.Task | None = PrivateAttr(default=None)
 
     async def on_validate(self, hub: Hub) -> None:
-        try:
-            self._event = hub.events[self.event]
-        except KeyError as e:
-            raise ValueError(f"Event {self.event!r} not found") from e
+        if self.event not in hub.events:
+            raise ValueError(f"Event {self.event!r} not found")
+        self._event = hub.events[self.event]
 
-        try:
-            self._conditions = [hub.conditions[name] for name in self.conditions]
-        except KeyError as e:
-            raise ValueError(f"Condition {e.args[0]!r} not found") from e
+        for expr in self.conditions:
+            hub.renderer.validate_expr(expr)
 
-        try:
-            self._actions = [hub.actions[name] for name in self.actions]
-        except KeyError as e:
-            raise ValueError(f"Action {e.args[0]!r} not found") from e
+        from automation.executor import validate_action_spec
+        for spec in self.actions:
+            validate_action_spec(spec, hub)
 
-        if not self._actions:
+        if not self.actions:
             raise ValueError("At least one action is required")
 
     async def on_activate(self, hub: Hub) -> None:
@@ -78,74 +82,70 @@ class Trigger(BaseAutomation):
                 except asyncio.CancelledError:
                     pass
 
-    async def run(self) -> None:
-        ln = self._hub.listener if self._hub else None
+    async def run(self, context: EventContext | None = None) -> None:
         match self.mode:
             case "skip":
                 if self._lock.locked():
-                    if ln:
-                        ln.on_trigger_skipped(self.instance_name)
+                    self._hub.notify("on_trigger_skipped", self.instance_name)
                     return
-                self._running_task = asyncio.create_task(self._skip_run())
+                self._running_task = asyncio.create_task(
+                    self._skip_run(context)
+                )
                 await self._running_task
             case "queue":
-                await self._queue.put(None)
+                await self._queue.put(context)
 
-    async def _skip_run(self) -> None:
+    async def _skip_run(self, context: EventContext | None = None) -> None:
         async with self._lock:
-            await self._execute()
+            await self._execute(context)
 
     async def _queue_worker(self) -> None:
         while True:
-            await self._queue.get()
+            context = await self._queue.get()
             try:
-                await self._execute()
+                await self._execute(context)
             except Exception:
-                logger.exception("Trigger %r execution failed", self.instance_name)
+                logger.exception(
+                    "Trigger %r execution failed", self.instance_name
+                )
             finally:
                 self._queue.task_done()
 
-    async def _execute(self) -> None:
-        ln = self._hub.listener if self._hub else None
+    async def _execute(self, context: EventContext | None = None) -> None:
+        from automation.executor import execute_action_spec
+
+        hub = self._hub
         t0 = time.perf_counter()
 
-        if ln:
-            ln.on_trigger_started(self.instance_name)
+        hub.notify("on_trigger_started", self.instance_name)
 
-        for condition in self._conditions:
-            passed = await condition.check()
-            if ln:
-                ln.on_condition_checked(
-                    self.instance_name, condition.instance_name, passed
-                )
+        renderer = hub.renderer.derive(
+            "event", "local", context.data if context else {}
+        )
+
+        for expr in self.conditions:
+            passed = renderer.eval_bool(expr)
+            hub.notify("on_condition_checked", self.instance_name, expr, passed)
             if not passed:
-                if ln:
-                    ln.on_trigger_aborted(
-                        self.instance_name, condition.instance_name
-                    )
+                hub.notify("on_trigger_aborted", self.instance_name, expr)
                 return
 
-        for action in self._actions:
-            if ln:
-                ln.on_action_started(self.instance_name, action.instance_name)
+        for spec in self.actions:
+            action_type = spec.get("type", "?")
+            spec_params = {k: v for k, v in spec.items() if k != "type"}
+            hub.notify("on_action_started", self.instance_name, action_type, params=spec_params)
             t1 = time.perf_counter()
             try:
-                await action.run()
+                await execute_action_spec(spec, renderer, hub)
             except Exception as e:
-                if ln:
-                    ln.on_action_error(
-                        self.instance_name, action.instance_name, e
-                    )
-                    ln.on_trigger_error(self.instance_name, e)
+                hub.notify("on_action_error", self.instance_name, action_type, e)
+                hub.notify("on_trigger_error", self.instance_name, e)
                 raise
-            if ln:
-                ln.on_action_completed(
-                    self.instance_name,
-                    action.instance_name,
-                    time.perf_counter() - t1,
-                )
+            elapsed = time.perf_counter() - t1
+            hub.notify("on_action_completed", self.instance_name, action_type, elapsed, params=spec_params)
 
-        if ln:
-            ln.on_trigger_completed(
-                self.instance_name, time.perf_counter() - t0
-            )
+        hub.notify(
+            "on_trigger_completed",
+            self.instance_name,
+            time.perf_counter() - t0,
+        )

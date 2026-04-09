@@ -20,7 +20,7 @@ class BaseAutomation(BaseModel, ABC):
     instance_name: str = Field(..., description="实例名")
 
     _IMMUTABLE_FIELDS: ClassVar[frozenset[str]] = frozenset({"instance_name"})
-    _hub: Any = PrivateAttr(default=None)
+    _hub: Hub = PrivateAttr(default=None)
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)

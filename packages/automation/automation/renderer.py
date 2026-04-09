@@ -1,0 +1,194 @@
+import ast
+import re
+import operator
+from typing import Any
+
+VARIABLE_RE = re.compile(r"\{([^{}]+)\}")
+
+class Renderer:
+    """
+    渲染器 — 统一的变量解析、模板渲染、表达式求值引擎
+    
+    通过 derive() 创建子渲染器来注入局部作用域，
+    不可变设计，derive 不影响父渲染器。
+    """
+
+    def __init__(self, hub):
+        self._hub = hub
+        self._scopes: dict[tuple[str, str], dict[str, Any]] = {}
+
+    def derive(self, type_: str, scope: str, data: dict[str, Any]) -> "Renderer":
+        """创建带有新作用域的子渲染器"""
+        child = Renderer.__new__(Renderer)
+        child._hub = self._hub
+        child._scopes = {**self._scopes, (type_, scope): data}
+        return child
+
+    # ── 变量解析 ──
+
+    def resolve(self, token: str) -> Any:
+        """解析 type.scope.attr_path 变量"""
+        parts = token.split(".", 2)
+        if len(parts) < 3:
+            raise ValueError(
+                f"Invalid variable: {{{token}}}, "
+                f"expected {{type.scope.attribute}}"
+            )
+        type_, scope, attr_path = parts
+
+        # 局部作用域: event.local.xxx, action.local.xxx
+        key = (type_, scope)
+        if key in self._scopes:
+            return self._deep_get(self._scopes[key], attr_path)
+
+        # 全局: entity.instance_name.attr_path
+        if type_ == "entity":
+            return self._resolve_entity(scope, attr_path)
+
+        raise ValueError(f"Cannot resolve variable: {{{token}}}")
+
+    # ── 模板渲染 ──
+
+    def render(self, template: str) -> str:
+        """将 {var} 占位符替换为实际值的字符串"""
+        def replace(match):
+            token = match.group(1).strip()
+            return str(self.resolve(token))
+        return VARIABLE_RE.sub(replace, template)
+
+    def render_value(self, value: Any) -> Any:
+        """递归渲染值：str 做模板渲染，dict/list 递归，其余原样返回"""
+        if isinstance(value, str):
+            return self.render(value)
+        if isinstance(value, dict):
+            return {k: self.render_value(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [self.render_value(v) for v in value]
+        return value
+
+    # ── 表达式求值 ──
+
+    def eval_bool(self, expr: str) -> bool:
+        """解析并求值布尔表达式，{var} 占位符会先解析为值"""
+        placeholders: dict[str, str] = {}
+        def replace(match):
+            token = match.group(1).strip()
+            name = f"_v{len(placeholders)}"
+            placeholders[name] = token
+            return name
+        parsed = VARIABLE_RE.sub(replace, expr)
+        tree = ast.parse(parsed, mode="eval")
+        _validate_ast(tree)
+        values = {
+            name: self.resolve(token)
+            for name, token in placeholders.items()
+        }
+        result = _safe_eval(tree.body, values)
+        if not isinstance(result, bool):
+            raise ValueError(
+                f"Expression must return bool, got {type(result).__name__}"
+            )
+        return result
+
+    # ── 校验（配置加载时）──
+
+    def validate_token(self, token: str) -> None:
+        parts = token.split(".", 2)
+        if len(parts) < 3:
+            raise ValueError(f"Invalid variable format: {{{token}}}")
+        type_, scope, _ = parts
+        if type_ == "entity":
+            if scope not in self._hub.entities:
+                raise ValueError(f"Entity {scope!r} not found")
+            return
+        if type_ in ("event", "action") and scope == "local":
+            return  # 只能运行时校验
+        raise ValueError(f"Unknown variable namespace: {type_}.{scope}")
+
+    def validate_template(self, template: str) -> None:
+        for match in VARIABLE_RE.finditer(template):
+            self.validate_token(match.group(1).strip())
+
+    def validate_expr(self, expr: str) -> None:
+        self.validate_template(expr)
+        # 还要验证表达式语法
+        cleaned = VARIABLE_RE.sub("True", expr)
+        try:
+            tree = ast.parse(cleaned, mode="eval")
+        except SyntaxError as e:
+            raise ValueError(f"Syntax error in expression: {expr!r}") from e
+        _validate_ast(tree)
+
+    # ── 内部方法 ──
+
+    def _resolve_entity(self, name: str, attr_path: str) -> Any:
+        if name not in self._hub.entities:
+            raise ValueError(f"Entity {name!r} not found")
+        obj = self._hub.entities[name]
+        for part in attr_path.split("."):
+            if not hasattr(obj, part):
+                raise ValueError(
+                    f"Entity {name!r} has no attribute path {attr_path!r}"
+                )
+            obj = getattr(obj, part)
+        return obj
+
+    @staticmethod
+    def _deep_get(data: dict, path: str) -> Any:
+        """从 dict 中按 . 分隔路径取值"""
+        current = data
+        for part in path.split("."):
+            if isinstance(current, dict):
+                if part not in current:
+                    raise ValueError(f"Key {part!r} not found in scope data")
+                current = current[part]
+            else:
+                if not hasattr(current, part):
+                    raise ValueError(f"Attribute {part!r} not found")
+                current = getattr(current, part)
+        return current
+
+_SAFE_NODES = (
+    ast.Expression, ast.BoolOp, ast.Compare, ast.UnaryOp,
+    ast.Constant, ast.Name, ast.Load, ast.And, ast.Or, ast.Not,
+    ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE,
+    ast.Is, ast.IsNot, ast.In, ast.NotIn,
+)
+
+_CMP_OPS = {
+    ast.Eq: operator.eq, ast.NotEq: operator.ne,
+    ast.Lt: operator.lt, ast.LtE: operator.le,
+    ast.Gt: operator.gt, ast.GtE: operator.ge,
+    ast.Is: operator.is_, ast.IsNot: operator.is_not,
+}
+
+def _validate_ast(tree: ast.AST) -> None:
+    for node in ast.walk(tree):
+        if not isinstance(node, _SAFE_NODES):
+            raise ValueError(f"Unsupported expression node: {type(node).__name__}")
+
+def _safe_eval(node: ast.AST, values: dict[str, Any]) -> Any:
+    if isinstance(node, ast.BoolOp):
+        if isinstance(node.op, ast.And):
+            return all(_safe_eval(v, values) for v in node.values)
+        return any(_safe_eval(v, values) for v in node.values)
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+        return not _safe_eval(node.operand, values)
+    if isinstance(node, ast.Compare):
+        left = _safe_eval(node.left, values)
+        for op, comparator in zip(node.ops, node.comparators):
+            right = _safe_eval(comparator, values)
+            op_func = _CMP_OPS.get(type(op))
+            if op_func is None:
+                raise ValueError(f"Unsupported compare op: {type(op).__name__}")
+            if not op_func(left, right):
+                return False
+            left = right
+        return True
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.Name):
+        if node.id not in values:
+            raise ValueError(f"Unknown variable: {node.id}")
+        return values[node.id]
+    raise ValueError(f"Cannot evaluate node: {type(node).__name__}")

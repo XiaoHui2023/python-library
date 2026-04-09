@@ -7,6 +7,7 @@ from registry import Registry
 import inspect
 import asyncio
 from pydantic import PrivateAttr
+from .event_context import EventContext
 
 if TYPE_CHECKING:
     from automation.hub import Hub
@@ -24,13 +25,16 @@ class Event(BaseAutomation):
     _on_fire: list[Callable[[], Any]] = PrivateAttr(default_factory=list)
     _on_error: Callable[[Exception], Any] | None = PrivateAttr(default=None)
 
-    async def fire(self):
-        if self._hub is not None:
-            self._hub.listener.on_event_fired(self.instance_name)
+    async def fire(self, context: EventContext | None = None):
+        if context is None:
+            context = EventContext(event_name=self.instance_name)
+        
+        self._hub.notify("on_event_fired", self.instance_name)
+        
         tasks = []
         for callback in self._on_fire:
             try:
-                result = callback()
+                result = callback(context)    # ← 传入 context
             except Exception as e:
                 await self._handle_error(e)
                 continue

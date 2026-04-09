@@ -1,24 +1,6 @@
 from __future__ import annotations
-
 import sys
-
-
-class AutomationListener:
-    """自动化生命周期监听器 — 子类覆写感兴趣的方法"""
-
-    def on_start(self) -> None: pass
-    def on_stop(self) -> None: pass
-    def on_event_fired(self, event_name: str) -> None: pass
-    def on_trigger_started(self, trigger_name: str) -> None: pass
-    def on_trigger_skipped(self, trigger_name: str) -> None: pass
-    def on_trigger_completed(self, trigger_name: str, elapsed: float) -> None: pass
-    def on_trigger_aborted(self, trigger_name: str, condition_name: str) -> None: pass
-    def on_trigger_error(self, trigger_name: str, error: Exception) -> None: pass
-    def on_condition_checked(self, trigger_name: str, condition_name: str, passed: bool) -> None: pass
-    def on_action_started(self, trigger_name: str, action_name: str) -> None: pass
-    def on_action_completed(self, trigger_name: str, action_name: str, elapsed: float) -> None: pass
-    def on_action_error(self, trigger_name: str, action_name: str, error: Exception) -> None: pass
-
+from .base import BaseListener
 
 class _Ansi:
     RESET  = "\033[0m"
@@ -29,12 +11,12 @@ class _Ansi:
     YELLOW = "\033[33m"
     CYAN   = "\033[36m"
 
-
-class ConsoleRenderer(AutomationListener):
+class ConsoleListener(BaseListener):
     """默认彩色控制台渲染器"""
 
-    def _write(self, msg: str) -> None:
-        sys.stderr.write(msg + "\n")
+    def _write(self, msg: str, prefix: str = "") -> None:
+        line = f"{_Ansi.DIM}[{prefix}]{_Ansi.RESET} {msg}" if prefix else msg
+        sys.stderr.write(line + "\n")
         sys.stderr.flush()
 
     def on_start(self) -> None:
@@ -78,17 +60,15 @@ class ConsoleRenderer(AutomationListener):
         else:
             self._write(f"{_Ansi.RED}│ ✗ {condition_name}{_Ansi.RESET}")
 
-    def on_action_started(self, trigger_name: str, action_name: str) -> None:
-        self._write(f"│ ▶ {action_name}")
-
-    def on_action_completed(
-        self, trigger_name: str, action_name: str, elapsed: float
-    ) -> None:
+    def on_action_started(self, trigger_name: str, action_name: str, **_) -> None:
+        self._write(f"│ ▶ {action_name}", prefix=trigger_name)
+        
+    def on_action_completed(self, trigger_name: str, action_name: str, elapsed: float, **_) -> None:
         self._write(
             f"{_Ansi.GREEN}│ ✓ {action_name}{_Ansi.RESET}"
-            f" {_Ansi.DIM}({elapsed:.2f}s){_Ansi.RESET}"
+            f" {_Ansi.DIM}({elapsed:.2f}s){_Ansi.RESET}",
+            prefix=trigger_name,
         )
-
     def on_action_error(
         self, trigger_name: str, action_name: str, error: Exception
     ) -> None:

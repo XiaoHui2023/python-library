@@ -12,4 +12,24 @@ def export_schema() -> dict:
             schema = cls.model_json_schema()
             schema.get("properties", {}).pop("instance_name", None)
             result[section_name][short] = schema
+    result["actions"] = {
+        "type": "object",
+        "description": "命名组合动作",
+        "properties": {
+            "params": {
+                "type": "object",
+                "description": "参数声明 {名称: 类型}",
+            },
+            "conditions": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "条件表达式列表",
+            },
+            "actions": {
+                "type": "array",
+                "items": {"type": "object"},
+                "description": "子动作规格列表",
+            },
+        },
+    }
     return result

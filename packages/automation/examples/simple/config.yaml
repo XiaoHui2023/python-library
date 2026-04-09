@@ -5,23 +5,24 @@ events:
     immediate: true
 
 actions:
-  log_start:
-    type: log
-    info: "heartbeat fired, start waiting"
-
-  wait_2s:
-    type: delay
-    seconds: 2
-
-  log_finish:
-    type: log
-    info: "delay finished"
+  greet:
+    params:
+      message: str
+    conditions:
+      - "{action.local.message} != ''"
+    actions:
+      - type: log
+        info: "[greet] {action.local.message}"
 
 triggers:
   heartbeat_flow:
     event: heartbeat
-    conditions: []
     actions:
-      - log_start
-      - wait_2s
-      - log_finish
+      - type: log
+        info: "heartbeat fired, start waiting"
+      - type: delay
+        seconds: 2
+      - type: log
+        info: "delay finished"
+      - type: greet
+        message: "hello from composite action"
