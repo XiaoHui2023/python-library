@@ -1,17 +1,17 @@
-from .client import XiaomiMiotClient, LocalDevice
-from .cloud import MiotCloud, XiaomiCloudError, XiaomiLoginError
-from .sync import SyncXiaomiMiotClient
-from .miot_spec import MiotSpec, MiotService, MiotProperty, MiotAction
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning, module=r"miio\.miot_device")
+
+from .device import MiotDevice
+from .models import DeviceParams, GetParams, SetParams
+from .extensions import get_extension, list_extensions
+from ._api import execute
 
 __all__ = [
-    "XiaomiMiotClient",
-    "LocalDevice",
-    "MiotCloud",
-    "MiotSpec",
-    "MiotService",
-    "MiotProperty",
-    "MiotAction",
-    "SyncXiaomiMiotClient",
-    "XiaomiCloudError",
-    "XiaomiLoginError",
+    "MiotDevice",
+    "DeviceParams",
+    "GetParams",
+    "SetParams",
+    "get_extension",
+    "list_extensions",
+    "execute",
 ]

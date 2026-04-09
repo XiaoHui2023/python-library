@@ -8,4 +8,4 @@ if not exist .venv (
 call .venv\Scripts\activate.bat
 
 pip install python-dotenv
-python examples/basic_usage
+python examples/switch
