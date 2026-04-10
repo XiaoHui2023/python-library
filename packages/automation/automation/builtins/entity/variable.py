@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Any, ClassVar
 from pydantic import Field, PrivateAttr
 from automation.core import Entity
+from automation.core.entity import AttributeInfo
 
 TYPE_MAP = {"int": int, "float": float, "str": str, "bool": bool}
 
@@ -22,6 +23,18 @@ class VariableEntity(Entity):
             type_name = spec.get("type", "str")
             default = spec.get("default")
             self._values[name] = self._cast(type_name, default)
+
+    def get_attributes(self) -> tuple[AttributeInfo, ...]:
+        return tuple(
+            AttributeInfo(
+                name=name,
+                type=spec.get("type", "str"),
+                description=spec.get("description", ""),
+                readonly=False,
+                default=spec.get("default"),
+            )
+            for name, spec in self.properties.items()
+        )
 
     def __getattr__(self, name: str) -> Any:
         if not name.startswith("_"):

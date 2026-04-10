@@ -1,8 +1,13 @@
 from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from automation.hub import Hub
 
 class BaseListener:
     """自动化生命周期监听器"""
 
+    def on_loaded(self, hub: Hub) -> None: pass
     def on_start(self) -> None: pass
     def on_stop(self) -> None: pass
     def on_event_fired(self, event_name: str) -> None: pass

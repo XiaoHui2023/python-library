@@ -56,6 +56,7 @@ class Assistant:
             )
         config = _read_source(source)
         await loader.load(self._hub, config)
+        self._hub.notify("on_loaded", self._hub)
         if watch:
             self._watcher = WatchConfig(Path(source), dict)
             self._watcher(self._on_config_change)
@@ -121,10 +122,12 @@ class Assistant:
                 return
             await updater.apply_diff(self._hub, old_config, new_config)
             self._hub.config = new_config
+            self._hub.notify("on_loaded", self._hub)
 
     @staticmethod
     def export_schema() -> dict:
-        return schema.export_schema()
+        from automation.schema import export_type_schema
+        return export_type_schema()
 
 
 def _read_source(source: str | Path | dict) -> dict[str, Any]:

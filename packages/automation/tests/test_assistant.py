@@ -20,6 +20,12 @@ class AssistantTests(unittest.TestCase):
         schema = Assistant.export_schema()
         self.assertIsInstance(schema, dict)
 
+    def test_export_schema_includes_registered_entities(self) -> None:
+        schema = Assistant.export_schema()
+        self.assertIn("entities", schema)
+        self.assertIn("time", schema["entities"])
+        self.assertIn("variable", schema["entities"])
+
 
 if __name__ == "__main__":
     unittest.main()
