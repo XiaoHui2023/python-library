@@ -50,7 +50,7 @@ class CallbackEvent(Event):
                 event_ref._entity_ref = _entity
                 context = EventContext(
                     event_name=event_ref.instance_name,
-                    data=kwargs,
+                    data={"entity": _entity, **kwargs},
                 )
                 await event_ref.fire(context)
 
