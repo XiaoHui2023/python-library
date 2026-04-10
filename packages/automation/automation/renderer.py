@@ -169,11 +169,13 @@ class Renderer:
 
 _SAFE_NODES = (
     ast.Expression, ast.BoolOp, ast.Compare, ast.UnaryOp,
-    ast.Constant, ast.Name, ast.Load, ast.And, ast.Or, ast.Not,
+    ast.Constant, ast.Name, ast.Load, ast.Store, ast.And, ast.Or, ast.Not,
     ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE,
     ast.Is, ast.IsNot, ast.In, ast.NotIn,
     ast.List, ast.Tuple,
     ast.Call,
+    ast.Attribute,
+    ast.ListComp, ast.GeneratorExp, ast.comprehension,
 )
 _SAFE_FUNCTIONS = frozenset({"any", "all"})
 
@@ -200,6 +202,18 @@ def _validate_ast(tree: ast.AST) -> None:
                 )
             if node.keywords:
                 raise ValueError("Keyword arguments not supported in expressions")
+        if isinstance(node, ast.Attribute):
+            if node.attr.startswith("_"):
+                raise ValueError(
+                    f"Access to private attribute {node.attr!r} not allowed"
+                )
+        if isinstance(node, ast.comprehension):
+            if not isinstance(node.target, ast.Name):
+                raise ValueError(
+                    "Only simple variable names allowed in comprehension target"
+                )
+            if node.is_async:
+                raise ValueError("Async comprehensions not supported")
 
 def _safe_eval(node: ast.AST, values: dict[str, Any]) -> Any:
     if isinstance(node, ast.BoolOp):
@@ -233,6 +247,17 @@ def _safe_eval(node: ast.AST, values: dict[str, Any]) -> Any:
     if isinstance(node, (ast.List, ast.Tuple)):
         return [_safe_eval(el, values) for el in node.elts]
 
+    if isinstance(node, ast.Attribute):
+        obj = _safe_eval(node.value, values)
+        if not hasattr(obj, node.attr):
+            raise ValueError(
+                f"{type(obj).__name__!r} has no attribute {node.attr!r}"
+            )
+        return getattr(obj, node.attr)
+
+    if isinstance(node, (ast.ListComp, ast.GeneratorExp)):
+        return _eval_comprehension(node.generators, 0, node.elt, values)
+
     if isinstance(node, ast.Call):
         func_name = node.func.id
         args = [_safe_eval(a, values) for a in node.args]
@@ -245,3 +270,24 @@ def _safe_eval(node: ast.AST, values: dict[str, Any]) -> Any:
         raise ValueError(f"{func_name}() takes 1 or 2 arguments, got {len(args)}")
         
     raise ValueError(f"Cannot evaluate node: {type(node).__name__}")
+
+def _eval_comprehension(
+    generators: list[ast.comprehension],
+    gen_idx: int,
+    elt: ast.AST,
+    values: dict[str, Any],
+) -> list:
+    """递归求值推导式（支持多层 for 和 if 过滤）"""
+    if gen_idx >= len(generators):
+        return [_safe_eval(elt, values)]
+    gen = generators[gen_idx]
+    target_name = gen.target.id
+    iterable = _safe_eval(gen.iter, values)
+    results = []
+    for item in iterable:
+        inner = {**values, target_name: item}
+        if all(_safe_eval(cond, inner) for cond in gen.ifs):
+            results.extend(
+                _eval_comprehension(generators, gen_idx + 1, elt, inner)
+            )
+    return results
