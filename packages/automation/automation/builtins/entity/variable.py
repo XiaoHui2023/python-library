@@ -42,6 +42,9 @@ class VariableEntity(Entity):
             for name, spec in self.properties.items()
         )
 
+    def get_attribute_values(self) -> dict[str, Any]:
+        return dict(self._values)
+
     def __getattr__(self, name: str) -> Any:
         if not name.startswith("_"):
             priv = self.__dict__.get("__pydantic_private__")

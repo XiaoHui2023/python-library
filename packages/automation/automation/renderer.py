@@ -152,11 +152,21 @@ class Renderer:
     def _resolve_entity(self, name: str, attr_path: str) -> Any:
         if name not in self._hub.entities:
             raise ValueError(f"Entity {name!r} not found")
-        obj = self._hub.entities[name]
-        for part in attr_path.split("."):
+        entity = self._hub.entities[name]
+        parts = attr_path.split(".")
+
+        values = entity.get_attribute_values()
+        first = parts[0]
+        if first not in values:
+            raise ValueError(
+                f"{entity.__class__.__name__} {name!r} has no attribute path {attr_path!r}"
+            )
+        obj = values[first]
+
+        for part in parts[1:]:
             if not hasattr(obj, part):
                 raise ValueError(
-                    f"{obj.__class__.__name__} {name!r} has no attribute path {attr_path!r}"
+                    f"{entity.__class__.__name__} {name!r} has no attribute path {attr_path!r}"
                 )
             obj = getattr(obj, part)
         return obj
