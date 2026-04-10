@@ -2,6 +2,7 @@ import ast
 import re
 import operator
 from typing import Any
+from .hub import Hub
 
 VARIABLE_RE = re.compile(r"\{([^{}]+)\}")
 _SINGLE_VAR_RE = re.compile(r"^\{([^{}]+)\}$")
@@ -15,7 +16,7 @@ class Renderer:
     """
 
     def __init__(self, hub):
-        self._hub = hub
+        self._hub: Hub = hub
         self._scopes: dict[tuple[str, str], dict[str, Any]] = {}
 
     def derive(self, type_: str, scope: str, data: dict[str, Any]) -> "Renderer":
@@ -117,10 +118,18 @@ class Renderer:
                 return
             raise ValueError(f"Unknown variable namespace: {type_}.{scope}")
 
-        type_, scope, _ = parts
+        type_, scope, attr_path = parts
         if type_ == "entity":
             if scope not in self._hub.entities:
                 raise ValueError(f"Entity {scope!r} not found")
+            entity = self._hub.entities[scope]
+            attr_root = attr_path.split(".")[0]
+            known = {a.name for a in entity.get_attributes()}
+            if attr_root not in known:
+                raise ValueError(
+                    f"Entity {scope!r} has no attribute {attr_root!r}, "
+                    f"available: {', '.join(sorted(known))}"
+                )
             return
         if type_ in ("event", "action") and scope == "local":
             return
@@ -147,7 +156,7 @@ class Renderer:
         for part in attr_path.split("."):
             if not hasattr(obj, part):
                 raise ValueError(
-                    f"Entity {name!r} has no attribute path {attr_path!r}"
+                    f"{obj.__class__.__name__} {name!r} has no attribute path {attr_path!r}"
                 )
             obj = getattr(obj, part)
         return obj
