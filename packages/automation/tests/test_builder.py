@@ -7,7 +7,7 @@ import support
 
 from automation import loader
 from automation.core.entity import Entity
-
+from automation.errors import ConfigLoadError, LoadErrorCode
 
 class SampleEntity(Entity):
     _type: ClassVar[str] = "sample_entity"
@@ -25,9 +25,11 @@ class LoaderBuildSectionTests(unittest.TestCase):
         self.assertEqual(objs["a"].value, 42)
 
     def test_build_section_missing_type_raises(self) -> None:
-        with self.assertRaises(ValueError) as ctx:
+        with self.assertRaises(ConfigLoadError) as ctx:
             loader.build_section("entities", {"x": {"value": 1}})
-        self.assertIn("missing required field 'type'", str(ctx.exception))
+        self.assertEqual(ctx.exception.code, LoadErrorCode.MISSING_TYPE)
+        self.assertEqual(ctx.exception.section, "entities")
+        self.assertEqual(ctx.exception.instance, "x")
 
     def test_load_empty_config(self) -> None:
         hub = support.run_hub({})

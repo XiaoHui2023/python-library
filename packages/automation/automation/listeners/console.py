@@ -69,7 +69,14 @@ class ConsoleListener(BaseListener):
             f" {_Ansi.DIM}({elapsed:.2f}s){_Ansi.RESET}",
             prefix=trigger_name,
         )
+        
     def on_action_error(
         self, trigger_name: str, action_name: str, error: Exception
     ) -> None:
         self._write(f"{_Ansi.RED}│ ✗ {action_name}: {error}{_Ansi.RESET}")
+
+    def on_load_error(self, section, instance, phase, code, error):
+        self._write(
+            f"{_Ansi.RED}✗ {section}.{instance} "
+            f"[{phase}/{code}]: {error}{_Ansi.RESET}"
+        )

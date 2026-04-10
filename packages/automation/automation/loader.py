@@ -1,10 +1,11 @@
 import logging
 from typing import Any
-from automation.hub import Hub
-from automation.core.entity import entity_registry
-from automation.core.event import event_registry
-from automation.core.trigger import trigger_registry
-from automation.core.composite_action import CompositeAction
+from .hub import Hub
+from .core.entity import entity_registry
+from .core.event import event_registry
+from .core.trigger import trigger_registry
+from .core.composite_action import CompositeAction
+from .errors import ConfigLoadError, LoadPhase, LoadErrorCode
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +20,7 @@ DEFAULT_TYPES: dict[str, str] = {
 }
 
 
-def build_section(
-    section_name: str, section_data: dict[str, dict[str, Any]]
-) -> dict[str, Any]:
+def build_section(section_name, section_data):
     registry = SECTION_TO_REGISTRIES[section_name]
     default_type = DEFAULT_TYPES.get(section_name)
     result = {}
@@ -29,11 +28,26 @@ def build_section(
         spec = dict(spec)
         type_name = spec.pop("type", default_type)
         if type_name is None:
-            raise ValueError(
-                f"{section_name}.{name} missing required field 'type'"
+            raise ConfigLoadError(
+                section=section_name, instance=name,
+                phase=LoadPhase.BUILD, code=LoadErrorCode.MISSING_TYPE,
             )
-        cls = registry.get(type_name)
-        result[name] = cls(instance_name=name, **spec)
+        try:
+            cls = registry.get(type_name)
+        except KeyError as e:
+            raise ConfigLoadError(
+                section=section_name, instance=name,
+                phase=LoadPhase.BUILD, code=LoadErrorCode.UNKNOWN_TYPE,
+                cause=e,
+            ) from e
+        try:
+            result[name] = cls(instance_name=name, **spec)
+        except Exception as e:
+            raise ConfigLoadError(
+                section=section_name, instance=name,
+                phase=LoadPhase.BUILD, code=LoadErrorCode.INVALID_CONFIG,
+                cause=e,
+            ) from e
     return result
 
 
@@ -83,7 +97,19 @@ async def load(hub: Hub, config: dict[str, Any]) -> None:
         for section_name in hub.AUTOMATION_SECTIONS:
             for obj in hub.section(section_name).values():
                 obj._hub = hub
-                await obj.on_validate(hub)
+                try:
+                    await obj.on_validate(hub)
+                except ConfigLoadError:
+                    raise
+                except Exception as e:
+                    err = ConfigLoadError(
+                        section=section_name, instance=obj.instance_name,
+                        phase=LoadPhase.VALIDATE,
+                        code=LoadErrorCode.VALIDATION_FAILED, cause=e,
+                    )
+                    hub.notify("on_load_error", section_name,
+                                obj.instance_name, err.phase, err.code, e)
+                    raise err from e
 
         for composite in hub.actions.values():
             composite.validate(hub)

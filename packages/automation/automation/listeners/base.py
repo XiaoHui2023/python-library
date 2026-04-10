@@ -20,3 +20,4 @@ class BaseListener:
     def on_action_started(self, trigger_name: str, action_name: str, *, params: dict | None = None) -> None: pass
     def on_action_completed(self, trigger_name: str, action_name: str, elapsed: float, *, params: dict | None = None) -> None: pass
     def on_action_error(self, trigger_name: str, action_name: str, error: Exception) -> None: pass
+    def on_load_error(self,section: str,instance: str,phase: str,code: str,error: Exception) -> None: pass
