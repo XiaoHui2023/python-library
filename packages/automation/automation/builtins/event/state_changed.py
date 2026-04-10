@@ -15,6 +15,7 @@ class StateChangedEvent(Event):
     _type: ClassVar[str] = "state_changed"
 
     entity_type: str | None = Field(default=None, description="过滤实体类型（可选）")
+    entity_name: str | None = Field(default=None, description="过滤实体实例名（可选）")
     attribute: str | None = Field(default=None, description="过滤属性名（可选）")
 
     _entity_ref: Any = PrivateAttr(default=None)
@@ -29,6 +30,8 @@ class StateChangedEvent(Event):
 
         async def handler(entity, attr, old, new):
             if event_ref.entity_type and entity._type != event_ref.entity_type:
+                return
+            if event_ref.entity_name and entity.instance_name != event_ref.entity_name:
                 return
             if event_ref.attribute and attr != event_ref.attribute:
                 return
