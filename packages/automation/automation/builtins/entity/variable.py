@@ -25,7 +25,7 @@ class VariableEntity(Entity):
             self._values[name] = self._cast(type_name, default)
 
     def get_attributes(self) -> tuple[AttributeInfo, ...]:
-        return tuple(
+        dynamic = tuple(
             AttributeInfo(
                 name=name,
                 type=spec.get("type", "str"),
@@ -35,6 +35,7 @@ class VariableEntity(Entity):
             )
             for name, spec in self.properties.items()
         )
+        return dynamic
 
     def __getattr__(self, name: str) -> Any:
         if not name.startswith("_"):

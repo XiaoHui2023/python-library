@@ -11,7 +11,6 @@ from .renderer import Renderer
 from .builtins.action import CallEntityMethod, LogAction, DelayAction, SetAttributeAction
 from .builtins.event import EveryEvent, AtEvent, CallbackEvent
 from .builtins.entity import TimeEntity, VariableEntity
-from .core.entity import AttributeInfo, MethodInfo
 
 __all__ = [
     "Action",
@@ -34,6 +33,4 @@ __all__ = [
     "CallbackEvent",
     "TimeEntity",
     "VariableEntity",
-    "AttributeInfo",
-    "MethodInfo",
 ]

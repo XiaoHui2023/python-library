@@ -1,7 +1,9 @@
 from __future__ import annotations
 from typing import Any, TYPE_CHECKING
 
-from automation.core.entity import entity_registry, AttributeInfo, MethodInfo
+from automation.core.entity import (
+    entity_registry, introspect_attributes, introspect_methods,
+)
 from automation.core.event import event_registry
 from automation.core.action import action_registry
 from automation.core.trigger import trigger_registry
@@ -18,7 +20,6 @@ SECTION_REGISTRIES = {
 
 
 def _field_schema(field_info) -> dict[str, Any]:
-    """从 pydantic FieldInfo 提取 schema 信息"""
     result: dict[str, Any] = {}
     if field_info.annotation is not None:
         result["type"] = getattr(field_info.annotation, "__name__", str(field_info.annotation))
@@ -31,7 +32,6 @@ def _field_schema(field_info) -> dict[str, Any]:
 
 
 def export_type_schema() -> dict[str, Any]:
-    """类型 schema：所有已注册的类型及其参数、属性、方法"""
     result: dict[str, Any] = {}
 
     for section, registry in SECTION_REGISTRIES.items():
@@ -48,22 +48,21 @@ def export_type_schema() -> dict[str, Any]:
 
             type_info: dict[str, Any] = {"config_fields": config_fields}
 
-            if section == "entities" and hasattr(cls, "_attributes"):
+            if section == "entities":
                 type_info["attributes"] = [
                     {
                         "name": a.name, "type": a.type,
                         "description": a.description,
                         "readonly": a.readonly, "default": a.default,
                     }
-                    for a in cls._attributes
+                    for a in introspect_attributes(cls)
                 ]
-            if section == "entities" and hasattr(cls, "_methods"):
                 type_info["methods"] = [
                     {
                         "name": m.name, "description": m.description,
-                        "params": m.params,
+                        "params": m.params, "return_type": m.return_type,
                     }
-                    for m in cls._methods
+                    for m in introspect_methods(cls)
                 ]
 
             section_types[short] = type_info
@@ -81,12 +80,10 @@ def export_type_schema() -> dict[str, Any]:
 
 
 def export_instance_schema(hub: Hub) -> dict[str, Any]:
-    """实例 schema：当前加载的所有实例及其运行时状态"""
     from automation.core.entity import Entity
 
     result: dict[str, Any] = {}
 
-    # entities
     entities = {}
     for name, entity in hub.entities.items():
         info: dict[str, Any] = {"type": entity._type}
@@ -101,13 +98,15 @@ def export_instance_schema(hub: Hub) -> dict[str, Any]:
                 for attr in entity.get_attributes()
             }
             info["methods"] = [
-                {"name": m.name, "description": m.description, "params": m.params}
+                {
+                    "name": m.name, "description": m.description,
+                    "params": m.params, "return_type": m.return_type,
+                }
                 for m in entity.get_methods()
             ]
         entities[name] = info
     result["entities"] = entities
 
-    # events
     events = {}
     for name, event in hub.events.items():
         event_info: dict[str, Any] = {"type": event._type}
@@ -120,20 +119,17 @@ def export_instance_schema(hub: Hub) -> dict[str, Any]:
         events[name] = event_info
     result["events"] = events
 
-    # triggers
     triggers = {}
     for name, trigger in hub.triggers.items():
-        trigger_info: dict[str, Any] = {
+        triggers[name] = {
             "type": trigger._type,
             "event": trigger.event,
             "mode": trigger.mode,
             "conditions": trigger.conditions,
             "actions_count": len(trigger.actions),
         }
-        triggers[name] = trigger_info
     result["triggers"] = triggers
 
-    # composite actions
     actions = {}
     for name, composite in hub.actions.items():
         actions[name] = {
