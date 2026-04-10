@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 import inspect
 from abc import ABC
 from dataclasses import dataclass, field
@@ -11,7 +12,7 @@ from registry import Registry
 
 NAME_SPACE = "entity"
 entity_registry = Registry(NAME_SPACE)
-
+_SENTINEL = object()
 
 @dataclass(frozen=True)
 class AttributeInfo:
@@ -133,11 +134,36 @@ def introspect_methods(cls: type) -> tuple[MethodInfo, ...]:
     return tuple(methods)
 
 
-# ── Entity 基类 ──
-
 class Entity(BaseAutomation):
     _abstract: ClassVar[bool] = True
     _registry: ClassVar[Registry] = entity_registry
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name.startswith("_") or name in self._IMMUTABLE_FIELDS:
+            super().__setattr__(name, value)
+            return
+        old = getattr(self, name, _SENTINEL)
+        super().__setattr__(name, value)
+        if old is not _SENTINEL:
+            new = getattr(self, name)
+            try:
+                changed = old != new
+            except Exception:
+                changed = True
+            if changed:
+                self._notify_change(name, old, new)
+                
+    def _notify_change(self, attr: str, old: Any, new: Any) -> None:
+        priv = self.__dict__.get("__pydantic_private__")
+        hub = priv.get("_hub") if priv else None
+        if hub is None or not hub._on_state_changed:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+            for cb in list(hub._on_state_changed):
+                loop.create_task(cb(self, attr, old, new))
+        except RuntimeError:
+            pass
 
     def get_attributes(self) -> tuple[AttributeInfo, ...]:
         return introspect_attributes(type(self))

@@ -29,6 +29,7 @@ class Hub:
         self.config: dict[str, Any] = {}
         self.listeners: list[BaseListener] = []
         self.renderer: Renderer = Renderer(self)
+        self._on_state_changed: list = []
 
     AUTOMATION_SECTIONS = ("entities", "events", "triggers")
 

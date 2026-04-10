@@ -52,11 +52,19 @@ class VariableEntity(Entity):
     def __setattr__(self, name: str, value: Any) -> None:
         priv = self.__dict__.get("__pydantic_private__")
         if priv is not None and "_values" in priv and name in priv["_values"]:
+            old = priv["_values"][name]
             type_name = self.properties[name].get("type", "str")
             if type_name == "list":
-                priv["_values"][name] = list(value) if not isinstance(value, list) else value
-                return
-            priv["_values"][name] = self._cast(type_name, value)
+                new = list(value) if not isinstance(value, list) else value
+            else:
+                new = self._cast(type_name, value)
+            priv["_values"][name] = new
+            try:
+                changed = old != new
+            except Exception:
+                changed = True
+            if changed:
+                self._notify_change(name, old, new)
             return
         super().__setattr__(name, value)
 
