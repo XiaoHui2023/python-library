@@ -4,7 +4,7 @@ from typing import ClassVar
 
 from pydantic import Field
 
-from .base import ScheduledEvent
+from ._scheduled import ScheduledEvent
 from scheduler import At
 
 

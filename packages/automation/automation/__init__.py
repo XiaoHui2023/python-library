@@ -8,9 +8,7 @@ from .assistant import Assistant
 from .listeners import BaseListener, ConsoleListener, TraceListener, TypeSchemaListener, InstanceSchemaListener
 from .renderer import Renderer
 
-from .builtins.action import CallEntityMethod, LogAction, DelayAction, SetAttributeAction
-from .builtins.event import EveryEvent, AtEvent, CallbackEvent
-from .builtins.entity import TimeEntity, VariableEntity
+from . import builtins  # noqa: F401  触发自动注册
 
 __all__ = [
     "Action",
@@ -24,13 +22,4 @@ __all__ = [
     "TypeSchemaListener",
     "InstanceSchemaListener",
     "Renderer",
-    "CallEntityMethod",
-    "LogAction",
-    "DelayAction",
-    "SetAttributeAction",
-    "EveryEvent",
-    "AtEvent",
-    "CallbackEvent",
-    "TimeEntity",
-    "VariableEntity",
 ]

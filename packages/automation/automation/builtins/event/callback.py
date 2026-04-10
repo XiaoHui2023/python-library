@@ -1,4 +1,3 @@
-# automation/builtins/event/callback.py
 from __future__ import annotations
 from typing import Any, ClassVar, TYPE_CHECKING
 
@@ -15,24 +14,29 @@ class CallbackEvent(Event):
     _abstract: ClassVar[bool] = False
     _type: ClassVar[str] = "callback"
 
-    entity: str = Field(description="实体实例名")
+    entity_type: str = Field(description="实体类型名")
     callback: str = Field(description="实体上的回调属性名")
 
     _entity_ref: Any = PrivateAttr(default=None)
     _original_callback: Any = PrivateAttr(default=None)
     _wrapper: Any = PrivateAttr(default=None)
 
+    @property
+    def entity(self) -> Any:
+        """触发后可引用的实际 entity 实例"""
+        return self._entity_ref
+
     async def on_validate(self, hub: Hub) -> None:
-        if self.entity not in hub.entities:
-            raise ValueError(f"Entity {self.entity!r} not found")
-        self._entity_ref = hub.entities[self.entity]
+        if self.entity_type not in hub.entities:
+            raise ValueError(f"Entity {self.entity_type!r} not found")
+        self._entity_ref = hub.entities[self.entity_type]
 
     async def on_activate(self, hub: Hub) -> None:
-        entity = hub.entities[self.entity]
+        entity = hub.entities[self.entity_type]
         self._entity_ref = entity
         self._original_callback = getattr(entity, self.callback, None)
 
-        event_ref = self  # closure 引用
+        event_ref = self
 
         async def wrapper(**kwargs):
             context = EventContext(
