@@ -4,6 +4,7 @@ import operator
 from typing import Any
 
 VARIABLE_RE = re.compile(r"\{([^{}]+)\}")
+_SINGLE_VAR_RE = re.compile(r"^\{([^{}]+)\}$")
 
 class Renderer:
     """
@@ -67,8 +68,11 @@ class Renderer:
         return VARIABLE_RE.sub(replace, template)
 
     def render_value(self, value: Any) -> Any:
-        """递归渲染值：str 做模板渲染，dict/list 递归，其余原样返回"""
+        """递归解析值：纯变量引用返回原始对象，混合文本做字符串渲染"""
         if isinstance(value, str):
+            m = _SINGLE_VAR_RE.match(value.strip())
+            if m:
+                return self.resolve(m.group(1).strip())
             return self.render(value)
         if isinstance(value, dict):
             return {k: self.render_value(v) for k, v in value.items()}
@@ -228,7 +232,7 @@ def _safe_eval(node: ast.AST, values: dict[str, Any]) -> Any:
 
     if isinstance(node, (ast.List, ast.Tuple)):
         return [_safe_eval(el, values) for el in node.elts]
-        
+
     if isinstance(node, ast.Call):
         func_name = node.func.id
         args = [_safe_eval(a, values) for a in node.args]
