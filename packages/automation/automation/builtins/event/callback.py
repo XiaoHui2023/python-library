@@ -18,36 +18,48 @@ class CallbackEvent(Event):
     callback: str = Field(description="实体上的回调属性名")
 
     _entity_ref: Any = PrivateAttr(default=None)
-    _original_callback: Any = PrivateAttr(default=None)
-    _wrapper: Any = PrivateAttr(default=None)
+    _original_callbacks: dict[str, Any] = PrivateAttr(default_factory=dict)
 
     @property
     def entity(self) -> Any:
         """触发后可引用的实际 entity 实例"""
         return self._entity_ref
 
+    def _find_entities(self, hub: Hub) -> list:
+        return [
+            e for e in hub.entities.values()
+            if e._type == self.entity_type
+        ]
+
     async def on_validate(self, hub: Hub) -> None:
-        if self.entity_type not in hub.entities:
-            raise ValueError(f"Entity {self.entity_type!r} not found")
-        self._entity_ref = hub.entities[self.entity_type]
+        if not self._find_entities(hub):
+            raise ValueError(
+                f"No entity of type {self.entity_type!r} found"
+            )
 
     async def on_activate(self, hub: Hub) -> None:
-        entity = hub.entities[self.entity_type]
-        self._entity_ref = entity
-        self._original_callback = getattr(entity, self.callback, None)
-
         event_ref = self
+        self._original_callbacks.clear()
 
-        async def wrapper(**kwargs):
-            context = EventContext(
-                event_name=event_ref.instance_name,
-                data=kwargs,
+        for entity in self._find_entities(hub):
+            self._original_callbacks[entity.instance_name] = getattr(
+                entity, self.callback, None
             )
-            await event_ref.fire(context)
 
-        self._wrapper = wrapper
-        setattr(entity, self.callback, wrapper)
+            async def wrapper(_entity=entity, **kwargs):
+                event_ref._entity_ref = _entity
+                context = EventContext(
+                    event_name=event_ref.instance_name,
+                    data=kwargs,
+                )
+                await event_ref.fire(context)
+
+            setattr(entity, self.callback, wrapper)
 
     async def on_stop(self) -> None:
-        if self._entity_ref is not None and self._original_callback is not None:
-            setattr(self._entity_ref, self.callback, self._original_callback)
+        for name, original in self._original_callbacks.items():
+            entity = self._hub.entities.get(name)
+            if entity is not None and original is not None:
+                setattr(entity, self.callback, original)
+        self._original_callbacks.clear()
+        self._entity_ref = None
