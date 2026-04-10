@@ -29,7 +29,19 @@ class Renderer:
     def resolve(self, token: str) -> Any:
         """解析 type.scope.attr_path 变量"""
         parts = token.split(".", 2)
-        if len(parts) < 3:
+
+        if len(parts) == 2:
+            type_, scope = parts
+            if type_ == "entity":
+                if scope not in self._hub.entities:
+                    raise ValueError(f"Entity {scope!r} not found")
+                return self._hub.entities[scope]
+            key = (type_, scope)
+            if key in self._scopes:
+                return self._scopes[key]
+            raise ValueError(f"Cannot resolve variable: {{{token}}}")
+
+        if len(parts) < 2:
             raise ValueError(
                 f"Invalid variable: {{{token}}}, "
                 f"expected {{type.scope.attribute}}"
@@ -47,8 +59,6 @@ class Renderer:
 
         raise ValueError(f"Cannot resolve variable: {{{token}}}")
 
-    # ── 模板渲染 ──
-
     def render(self, template: str) -> str:
         """将 {var} 占位符替换为实际值的字符串"""
         def replace(match):
@@ -65,8 +75,6 @@ class Renderer:
         if isinstance(value, list):
             return [self.render_value(v) for v in value]
         return value
-
-    # ── 表达式求值 ──
 
     def eval_bool(self, expr: str) -> bool:
         """解析并求值布尔表达式，{var} 占位符会先解析为值"""
@@ -90,19 +98,28 @@ class Renderer:
             )
         return result
 
-    # ── 校验（配置加载时）──
-
     def validate_token(self, token: str) -> None:
         parts = token.split(".", 2)
-        if len(parts) < 3:
+        if len(parts) < 2:
             raise ValueError(f"Invalid variable format: {{{token}}}")
+
+        if len(parts) == 2:
+            type_, scope = parts
+            if type_ == "entity":
+                if scope not in self._hub.entities:
+                    raise ValueError(f"Entity {scope!r} not found")
+                return
+            if type_ in ("event", "action") and scope == "local":
+                return
+            raise ValueError(f"Unknown variable namespace: {type_}.{scope}")
+
         type_, scope, _ = parts
         if type_ == "entity":
             if scope not in self._hub.entities:
                 raise ValueError(f"Entity {scope!r} not found")
             return
         if type_ in ("event", "action") and scope == "local":
-            return  # 只能运行时校验
+            return
         raise ValueError(f"Unknown variable namespace: {type_}.{scope}")
 
     def validate_template(self, template: str) -> None:
@@ -111,15 +128,13 @@ class Renderer:
 
     def validate_expr(self, expr: str) -> None:
         self.validate_template(expr)
-        # 还要验证表达式语法
+        
         cleaned = VARIABLE_RE.sub("True", expr)
         try:
             tree = ast.parse(cleaned, mode="eval")
         except SyntaxError as e:
             raise ValueError(f"Syntax error in expression: {expr!r}") from e
         _validate_ast(tree)
-
-    # ── 内部方法 ──
 
     def _resolve_entity(self, name: str, attr_path: str) -> Any:
         if name not in self._hub.entities:
@@ -153,6 +168,7 @@ _SAFE_NODES = (
     ast.Constant, ast.Name, ast.Load, ast.And, ast.Or, ast.Not,
     ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE,
     ast.Is, ast.IsNot, ast.In, ast.NotIn,
+    ast.List, ast.Tuple,
 )
 
 _CMP_OPS = {
@@ -160,6 +176,8 @@ _CMP_OPS = {
     ast.Lt: operator.lt, ast.LtE: operator.le,
     ast.Gt: operator.gt, ast.GtE: operator.ge,
     ast.Is: operator.is_, ast.IsNot: operator.is_not,
+    ast.In: lambda a, b: a in b,
+    ast.NotIn: lambda a, b: a not in b,
 }
 
 def _validate_ast(tree: ast.AST) -> None:
@@ -172,8 +190,10 @@ def _safe_eval(node: ast.AST, values: dict[str, Any]) -> Any:
         if isinstance(node.op, ast.And):
             return all(_safe_eval(v, values) for v in node.values)
         return any(_safe_eval(v, values) for v in node.values)
+
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
         return not _safe_eval(node.operand, values)
+
     if isinstance(node, ast.Compare):
         left = _safe_eval(node.left, values)
         for op, comparator in zip(node.ops, node.comparators):
@@ -185,10 +205,16 @@ def _safe_eval(node: ast.AST, values: dict[str, Any]) -> Any:
                 return False
             left = right
         return True
+
     if isinstance(node, ast.Constant):
         return node.value
+
     if isinstance(node, ast.Name):
         if node.id not in values:
             raise ValueError(f"Unknown variable: {node.id}")
         return values[node.id]
+
+    if isinstance(node, (ast.List, ast.Tuple)):
+        return [_safe_eval(el, values) for el in node.elts]
+        
     raise ValueError(f"Cannot evaluate node: {type(node).__name__}")

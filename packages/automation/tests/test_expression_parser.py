@@ -3,11 +3,6 @@ from typing import ClassVar
 
 import automation  # noqa: F401
 
-from automation.builtins.condition.expression.parser import (
-    parse_expr,
-    validate_ast,
-    validate_placeholder,
-)
 from automation.core.entity import Entity
 from automation.hub import Hub
 
@@ -21,21 +16,21 @@ class ExpressionParserTests(unittest.TestCase):
     def test_parse_entity_field(self) -> None:
         hub = Hub()
         hub.entities["lamp"] = ParserLamp(instance_name="lamp", on=True)
-        tree, placeholders = parse_expr("{lamp.on}", hub)
-        self.assertTrue(placeholders)
-        validate_ast(tree)
+        r = hub.renderer
+        r.validate_expr("{entity.lamp.on}")
+        self.assertTrue(r.eval_bool("{entity.lamp.on}"))
 
-    def test_validate_placeholder_unknown_entity_raises(self) -> None:
+    def test_validate_token_unknown_entity_raises(self) -> None:
         hub = Hub()
         with self.assertRaises(ValueError) as ctx:
-            validate_placeholder("missing.attr", hub)
+            hub.renderer.validate_token("entity.missing.on")
         self.assertIn("Entity 'missing' not found", str(ctx.exception))
 
-    def test_parse_syntax_error_raises(self) -> None:
+    def test_validate_expr_syntax_error_raises(self) -> None:
         hub = Hub()
         hub.entities["lamp"] = ParserLamp(instance_name="lamp", on=True)
         with self.assertRaises(ValueError) as ctx:
-            parse_expr("{lamp.on} +", hub)
+            hub.renderer.validate_expr("{entity.lamp.on} +")
         self.assertIn("Syntax error", str(ctx.exception))
 
 

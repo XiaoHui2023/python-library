@@ -12,7 +12,7 @@ from automation.hub import Hub, State
 from automation.core import Entity, Event, Trigger, BaseAutomation
 from automation.core.composite_action import CompositeAction
 from automation import loader, updater, schema
-from automation.listener import BaseListener
+from automation.listeners import BaseListener
 
 logger = logging.getLogger(__name__)
 

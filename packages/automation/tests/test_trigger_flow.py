@@ -35,22 +35,18 @@ class TriggerFlowTests(unittest.TestCase):
         config = {
             "entities": {"lamp": {"type": "trigger_flow_lamp", "on": True}},
             "events": {"e1": {"type": "press"}},
-            "conditions": {
-                "c1": {"type": "expression", "expr": "{lamp.on}"},
-            },
-            "actions": {
-                "a1": {
-                    "type": "call_entity_method",
-                    "entity": "lamp",
-                    "method": "record",
-                    "args": {},
-                },
-            },
             "triggers": {
                 "t1": {
                     "event": "e1",
-                    "conditions": ["c1"],
-                    "actions": ["a1"],
+                    "conditions": ["{entity.lamp.on}"],
+                    "actions": [
+                        {
+                            "type": "call_entity_method",
+                            "entity": "lamp",
+                            "method": "record",
+                            "args": {},
+                        },
+                    ],
                 },
             },
         }
@@ -67,22 +63,18 @@ class TriggerFlowTests(unittest.TestCase):
         config = {
             "entities": {"lamp": {"type": "trigger_flow_lamp", "on": False}},
             "events": {"e1": {"type": "press"}},
-            "conditions": {
-                "c1": {"type": "expression", "expr": "{lamp.on}"},
-            },
-            "actions": {
-                "a1": {
-                    "type": "call_entity_method",
-                    "entity": "lamp",
-                    "method": "record",
-                    "args": {},
-                },
-            },
             "triggers": {
                 "t1": {
                     "event": "e1",
-                    "conditions": ["c1"],
-                    "actions": ["a1"],
+                    "conditions": ["{entity.lamp.on}"],
+                    "actions": [
+                        {
+                            "type": "call_entity_method",
+                            "entity": "lamp",
+                            "method": "record",
+                            "args": {},
+                        },
+                    ],
                 },
             },
         }

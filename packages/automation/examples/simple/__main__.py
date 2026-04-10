@@ -1,7 +1,7 @@
 import asyncio
 from pathlib import Path
 from automation import Assistant, ConsoleListener
-from automation.listener import TraceListener
+from automation.listeners import TraceListener
 import logging
 
 logging.basicConfig(level=logging.INFO)

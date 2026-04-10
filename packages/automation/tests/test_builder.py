@@ -33,7 +33,6 @@ class LoaderBuildSectionTests(unittest.TestCase):
         hub = support.run_hub({})
         self.assertEqual(hub.entities, {})
         self.assertEqual(hub.events, {})
-        self.assertEqual(hub.conditions, {})
         self.assertEqual(hub.actions, {})
         self.assertEqual(hub.triggers, {})
 

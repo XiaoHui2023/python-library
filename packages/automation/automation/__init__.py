@@ -5,7 +5,7 @@ from .core import (
     Event,
 )
 from .assistant import Assistant
-from .listener import BaseListener, ConsoleListener, TraceListener
+from .listeners import BaseListener, ConsoleListener, TraceListener
 from .renderer import Renderer
 
 from .builtins.action import CallEntityMethod, LogAction, DelayAction

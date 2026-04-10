@@ -8,7 +8,7 @@ class HubTests(unittest.TestCase):
         hub = Hub()
         with self.assertRaises(KeyError) as ctx:
             hub.section("unknown")
-        self.assertIn("Unknown section", str(ctx.exception))
+        self.assertIn("Unknown automation section", str(ctx.exception))
 
     def test_initial_state(self) -> None:
         hub = Hub()

@@ -6,7 +6,7 @@ from .base import BaseAutomation
 from registry import Registry
 import inspect
 import asyncio
-from pydantic import PrivateAttr
+from pydantic import Field, PrivateAttr
 from .event_context import EventContext
 
 if TYPE_CHECKING:
@@ -22,12 +22,29 @@ class Event(BaseAutomation):
     _abstract: ClassVar[bool] = True
     _registry: ClassVar[Registry] = event_registry
 
+    conditions: list[str] = Field(
+        default_factory=list,
+        description="条件表达式列表，全部满足才触发事件",
+    )
+
     _on_fire: list[Callable[[], Any]] = PrivateAttr(default_factory=list)
     _on_error: Callable[[Exception], Any] | None = PrivateAttr(default=None)
+
+    async def on_validate(self, hub: Hub) -> None:
+        for expr in self.conditions:
+            hub.renderer.validate_expr(expr)
 
     async def fire(self, context: EventContext | None = None):
         if context is None:
             context = EventContext(event_name=self.instance_name)
+
+        if self.conditions:
+            renderer = self._hub.renderer.derive(
+                "event", "local", context.data
+            )
+            for expr in self.conditions:
+                if not renderer.eval_bool(expr):
+                    return
         
         self._hub.notify("on_event_fired", self.instance_name)
         

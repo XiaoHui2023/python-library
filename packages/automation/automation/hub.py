@@ -4,7 +4,7 @@ from typing import Any, Literal, overload
 from .core import Entity, Event, Trigger, BaseAutomation
 from .core.composite_action import CompositeAction
 from .renderer import Renderer
-from .listener import BaseListener
+from .listeners import BaseListener
 
 
 class State(StrEnum):

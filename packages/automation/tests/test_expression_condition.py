@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import unittest
 from typing import ClassVar
 
@@ -26,7 +25,7 @@ class LampEntity(Entity):
 
 
 class ExpressionConditionTests(unittest.TestCase):
-    def test_expression_can_reference_condition_and_entity(self) -> None:
+    def test_expression_can_combine_entity_fields(self) -> None:
         config = {
             "entities": {
                 "lamp": {
@@ -37,26 +36,20 @@ class ExpressionConditionTests(unittest.TestCase):
                 },
             },
             "events": {"e1": {"type": "expression_event"}},
-            "conditions": {
-                "is_on": {"type": "expression", "expr": "{lamp.on}"},
-                "can_run": {
-                    "type": "expression",
-                    "expr": "{is_on} and {lamp.load} < 0.8",
-                },
-            },
-            "actions": {
-                "a1": {
-                    "type": "call_entity_method",
-                    "entity": "lamp",
-                    "method": "record",
-                    "args": {},
-                },
-            },
             "triggers": {
                 "t1": {
                     "event": "e1",
-                    "conditions": ["can_run"],
-                    "actions": ["a1"],
+                    "conditions": [
+                        "{entity.lamp.on} and {entity.lamp.load} < 0.8",
+                    ],
+                    "actions": [
+                        {
+                            "type": "call_entity_method",
+                            "entity": "lamp",
+                            "method": "record",
+                            "args": {},
+                        },
+                    ],
                 },
             },
         }
@@ -70,7 +63,7 @@ class ExpressionConditionTests(unittest.TestCase):
         hub = asyncio.run(run())
         self.assertTrue(hub.entities["lamp"].called)
 
-    def test_expression_detects_condition_cycle(self) -> None:
+    def test_load_fails_when_condition_references_unknown_entity(self) -> None:
         config = {
             "entities": {
                 "lamp": {
@@ -81,50 +74,29 @@ class ExpressionConditionTests(unittest.TestCase):
                 },
             },
             "events": {"e1": {"type": "expression_event"}},
-            "conditions": {
-                "c1": {"type": "expression", "expr": "{c2}"},
-                "c2": {"type": "expression", "expr": "{c1}"},
-            },
-            "actions": {
-                "a1": {
-                    "type": "call_entity_method",
-                    "entity": "lamp",
-                    "method": "record",
-                    "args": {},
-                },
-            },
             "triggers": {
                 "t1": {
                     "event": "e1",
-                    "conditions": ["c1"],
-                    "actions": ["a1"],
+                    "conditions": ["{entity.not_lamp.on}"],
+                    "actions": [
+                        {
+                            "type": "call_entity_method",
+                            "entity": "lamp",
+                            "method": "record",
+                            "args": {},
+                        },
+                    ],
                 },
             },
         }
 
-        recorded: list[Exception] = []
-
-        def on_error(exc: Exception) -> None:
-            recorded.append(exc)
-
-        elog = logging.getLogger("automation.core.event")
-        old_level = elog.level
-        elog.setLevel(logging.CRITICAL)
-
-        async def run() -> Hub:
+        async def run() -> None:
             hub = Hub()
             await loader.load(hub, config)
-            hub.events["e1"].set_error_handler(on_error)
-            await hub.events["e1"].fire()
-            return hub
 
-        try:
-            hub = asyncio.run(run())
-        finally:
-            elog.setLevel(old_level)
-        self.assertEqual(len(recorded), 1)
-        self.assertIn("Circular condition dependency", str(recorded[0]))
-        self.assertFalse(hub.entities["lamp"].called)
+        with self.assertRaises(ValueError) as ctx:
+            asyncio.run(run())
+        self.assertIn("not_lamp", str(ctx.exception))
 
 
 if __name__ == "__main__":
