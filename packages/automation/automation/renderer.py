@@ -169,7 +169,9 @@ _SAFE_NODES = (
     ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE,
     ast.Is, ast.IsNot, ast.In, ast.NotIn,
     ast.List, ast.Tuple,
+    ast.Call,
 )
+_SAFE_FUNCTIONS = frozenset({"any", "all"})
 
 _CMP_OPS = {
     ast.Eq: operator.eq, ast.NotEq: operator.ne,
@@ -184,6 +186,16 @@ def _validate_ast(tree: ast.AST) -> None:
     for node in ast.walk(tree):
         if not isinstance(node, _SAFE_NODES):
             raise ValueError(f"Unsupported expression node: {type(node).__name__}")
+        if isinstance(node, ast.Call):
+            if (
+                not isinstance(node.func, ast.Name)
+                or node.func.id not in _SAFE_FUNCTIONS
+            ):
+                raise ValueError(
+                    f"Unsupported function: only {', '.join(_SAFE_FUNCTIONS)} allowed"
+                )
+            if node.keywords:
+                raise ValueError("Keyword arguments not supported in expressions")
 
 def _safe_eval(node: ast.AST, values: dict[str, Any]) -> Any:
     if isinstance(node, ast.BoolOp):
@@ -216,5 +228,16 @@ def _safe_eval(node: ast.AST, values: dict[str, Any]) -> Any:
 
     if isinstance(node, (ast.List, ast.Tuple)):
         return [_safe_eval(el, values) for el in node.elts]
+        
+    if isinstance(node, ast.Call):
+        func_name = node.func.id
+        args = [_safe_eval(a, values) for a in node.args]
+        fn = any if func_name == "any" else all
+        if len(args) == 1:
+            return fn(args[0])
+        if len(args) == 2:
+            items, attr = args
+            return fn(getattr(item, attr, False) for item in items)
+        raise ValueError(f"{func_name}() takes 1 or 2 arguments, got {len(args)}")
         
     raise ValueError(f"Cannot evaluate node: {type(node).__name__}")

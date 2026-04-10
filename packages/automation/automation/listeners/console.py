@@ -35,9 +35,9 @@ class ConsoleListener(BaseListener):
         self._write(f"{_Ansi.DIM}⏭ {trigger_name} (busy){_Ansi.RESET}")
 
     def on_trigger_completed(self, trigger_name: str, elapsed: float) -> None:
+        time_str = f" {_Ansi.DIM}({elapsed:.2f}s){_Ansi.RESET}" if elapsed >= 0.005 else ""
         self._write(
-            f"{_Ansi.YELLOW}└ {trigger_name}{_Ansi.RESET}"
-            f" {_Ansi.DIM}({elapsed:.2f}s){_Ansi.RESET}"
+            f"{_Ansi.YELLOW}└ {trigger_name}{_Ansi.RESET}{time_str}"
         )
 
     def on_trigger_aborted(self, trigger_name: str, condition_name: str) -> None:
@@ -64,9 +64,9 @@ class ConsoleListener(BaseListener):
         self._write(f"│ ▶ {action_name}", prefix=trigger_name)
         
     def on_action_completed(self, trigger_name: str, action_name: str, elapsed: float, **_) -> None:
+        time_str = f" {_Ansi.DIM}({elapsed:.2f}s){_Ansi.RESET}" if elapsed >= 0.005 else ""
         self._write(
-            f"{_Ansi.GREEN}│ ✓ {action_name}{_Ansi.RESET}"
-            f" {_Ansi.DIM}({elapsed:.2f}s){_Ansi.RESET}",
+            f"{_Ansi.GREEN}│ ✓ {action_name}{_Ansi.RESET}{time_str}",
             prefix=trigger_name,
         )
         
