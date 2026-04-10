@@ -8,8 +8,9 @@ from .assistant import Assistant
 from .listeners import BaseListener, ConsoleListener, TraceListener
 from .renderer import Renderer
 
-from .builtins.action import CallEntityMethod, LogAction, DelayAction
+from .builtins.action import CallEntityMethod, LogAction, DelayAction, SetAttributeAction
 from .builtins.event import EveryEvent, AtEvent, CallbackEvent
+from .builtins.entity import TimeEntity, VariableEntity
 
 __all__ = [
     "Action",
@@ -24,7 +25,10 @@ __all__ = [
     "CallEntityMethod",
     "LogAction",
     "DelayAction",
+    "SetAttributeAction",
     "EveryEvent",
     "AtEvent",
     "CallbackEvent",
+    "TimeEntity",
+    "VariableEntity",
 ]
