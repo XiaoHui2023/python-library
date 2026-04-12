@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import ClassVar, Callable, TypeVar
+from typing import ClassVar, Callable, TypeVar, get_origin
 import asyncio
 import logging
 import inspect
@@ -45,7 +45,7 @@ class Callback():
 
     def __init__(self, *args, **kwargs):
         """初始化事件实例"""
-        field_names = list(self.__class__.__annotations__.keys())
+        field_names = self.__class__._field_names()
         for i, arg in enumerate(args):
             if i < len(field_names):
                 setattr(self, field_names[i], arg)
@@ -170,6 +170,26 @@ class Callback():
     def get_all(cls) -> list[type[Callback]]:
         """获取所有回调"""
         return list(cls.__subclasses__())
+
+    @classmethod
+    def _field_names(cls) -> list[str]:
+        merged: dict[str, object] = {}
+        for base in reversed(cls.__mro__):
+            if base is object or base is Callback:
+                # 跳过 object 和框架基类 Callback 本身
+                continue
+
+            # 把 postponed annotations 的字符串还原成真实类型
+            annotations = inspect.get_annotations(base, eval_str=True)
+
+            for name, tp in annotations.items():
+                if name.startswith("_"):
+                    continue
+                if get_origin(tp) is ClassVar:
+                    continue
+                merged[name] = tp
+
+        return list(merged.keys())
 
 __all__ = [
     "Callback",
