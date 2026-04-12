@@ -63,6 +63,7 @@ class At(BaseScheduler):
         target = self._next_target(last)
         return last < target <= now
 
+    @property
     def target(self) -> datetime:
         """返回下次触发的目标时间"""
         if self._last_fire_at is None:
