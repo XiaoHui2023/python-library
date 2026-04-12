@@ -3,18 +3,15 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "automation"
+name = "python-library-automation"
 version = "0.1.16"
 requires-python = ">=3.10"
 dependencies = [
-    "registry @ git+https://github.com/XiaoHui2023/python-library.git@main#subdirectory=packages/registry",
-    "scheduler @ git+https://github.com/XiaoHui2023/python-library.git@main#subdirectory=packages/scheduler",
-    "watch_config @ git+https://github.com/XiaoHui2023/python-library.git@main#subdirectory=packages/watch_config",
+    "python-library-registry",
+    "python-library-scheduler",
+    "python-library-watch-config",
     "pydantic>=2.0.0",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["automation"]
-
-[tool.hatch.metadata]
-allow-direct-references = true

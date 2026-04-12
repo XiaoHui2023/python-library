@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "reactive-model"
+name = "python-library-reactive-model"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = []

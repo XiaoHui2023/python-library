@@ -2,7 +2,6 @@ import ast
 import re
 import operator
 from typing import Any
-from .hub import Hub
 
 VARIABLE_RE = re.compile(r"\{([^{}]+)\}")
 _SINGLE_VAR_RE = re.compile(r"^\{([^{}]+)\}$")
@@ -16,7 +15,7 @@ class Renderer:
     """
 
     def __init__(self, hub):
-        self._hub: Hub = hub
+        self._hub = hub
         self._scopes: dict[tuple[str, str], dict[str, Any]] = {}
 
     def derive(self, type_: str, scope: str, data: dict[str, Any]) -> "Renderer":

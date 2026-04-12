@@ -3,11 +3,11 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "watch_config"
+name = "python-library-watch-config"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
-    "configlib @ git+https://github.com/XiaoHui2023/python-library.git@main#subdirectory=packages/configlib",
+    "python-library-configlib",
 ]
 
 [tool.hatch.build.targets.wheel]

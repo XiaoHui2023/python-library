@@ -3,11 +3,11 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "tree-model"
+name = "python-library-tree-model"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
-    "reactive-model @ git+https://github.com/XiaoHui2023/python-library.git@main#subdirectory=packages/reactive_model",
+    "python-library-reactive-model",
     "pydantic>=2.0.0",
 ]
 
