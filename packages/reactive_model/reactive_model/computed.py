@@ -10,7 +10,11 @@ _MISSING = object()
 
 
 class ComputedModel(ReactiveModel[T]):
-    def __init__(self, expr: Callable[[], T]) -> None:
+    def __init__(self, expr: Callable[[], T]=None) -> None:
+        """
+        Args:
+            expr: The expression to compute the value.
+        """
         super().__init__()
         self._expr = expr
         self._cache: T | object = _MISSING
@@ -40,6 +44,9 @@ class ComputedModel(ReactiveModel[T]):
         return False
 
     def _recompute(self) -> None:
+        if self._expr is None:
+            raise ValueError("require expr to compute")
+
         collector = Collector()
 
         with compute_context(self, collector):
