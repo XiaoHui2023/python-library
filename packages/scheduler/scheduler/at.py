@@ -10,11 +10,7 @@ class At(BaseScheduler):
     minute: int = Field(0, ge=0, le=59, description="分钟")
     second: int = Field(0, ge=0, le=59, description="秒")
     weekday: int | None = Field(None, ge=0, le=6, description="星期几 (0=周一, 6=周日)")
-    interval: int = Field(
-        1,
-        ge=1,
-        description="未指定 weekday 时表示间隔天数；指定 weekday 时表示间隔周数",
-    )
+    day: int = Field(0, ge=0, description="最少间隔天数")
 
     def _with_schedule_time(self, dt: datetime) -> datetime:
         return dt.replace(
@@ -24,20 +20,32 @@ class At(BaseScheduler):
             microsecond=0,
         )
 
-    def _next_target(self, reference: datetime) -> datetime:
+    def _schedule_step(self) -> timedelta:
+        return timedelta(days=7 if self.weekday is not None else 1)
+
+    def _next_schedule_point(self, reference: datetime) -> datetime:
         target = self._with_schedule_time(reference)
 
         if self.weekday is not None:
             days = (self.weekday - reference.weekday()) % 7
             target += timedelta(days=days)
 
-            if target <= reference:
-                target += timedelta(weeks=self.interval)
+        if target <= reference:
+            target += self._schedule_step()
 
+        return target
+
+    def _next_target(self, reference: datetime) -> datetime:
+        target = self._next_schedule_point(reference)
+
+        # 还没有真正触发过时，不需要检查 day 间隔
+        if self._run_count == 0 or self.day == 0 or self._last_fire_at is None:
             return target
 
-        if target <= reference:
-            target += timedelta(days=self.interval)
+        min_allowed = self._last_fire_at + timedelta(days=self.day)
+
+        while target < min_allowed:
+            target += self._schedule_step()
 
         return target
 
