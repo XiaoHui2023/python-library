@@ -20,6 +20,13 @@ class ComputedModel(ReactiveModel[T]):
         self._cache: T | object = _MISSING
         self._deps: dict[int, tuple[Trackable, int]] = {}
 
+    def compute(self, expr: Callable[[], T]) -> None:
+        """
+        Args:
+            expr: The expression to compute the value.
+        """
+        self._expr = expr
+
     @property
     def value(self) -> T:
         if self._needs_recompute():
