@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import shutil
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -176,6 +176,30 @@ def version_exists(package_name: str, version: str, repository: str) -> bool:
     return info.get("version") == version
 
 
+def check_versions_in_parallel(
+    packages: list[PackageInfo],
+    repository: str,
+    max_workers: int = 8,
+) -> dict[str, bool]:
+    if not packages:
+        return {}
+
+    results: dict[str, bool] = {}
+    worker_count = min(max_workers, len(packages))
+
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        future_map = {
+            executor.submit(version_exists, pkg.name, pkg.version, repository): pkg
+            for pkg in packages
+        }
+
+        for future in as_completed(future_map):
+            pkg = future_map[future]
+            results[pkg.name] = future.result()
+
+    return results
+
+
 def run(cmd: list[str], cwd: Path) -> None:
     print(f"> {' '.join(cmd)}")
     result = subprocess.run(cmd, cwd=str(cwd))
@@ -195,13 +219,13 @@ def ensure_tool(module_name: str, install_hint: str) -> None:
         sys.exit(1)
 
 
-def process_package(pkg: PackageInfo, repository: str) -> None:
+def process_package(pkg: PackageInfo, repository: str, already_exists: bool) -> None:
     print()
     print("=" * 60)
     print(f"Processing {pkg.name} ({pkg.version})")
     print("=" * 60)
 
-    if version_exists(pkg.name, pkg.version, repository):
+    if already_exists:
         print(f"Skip: {pkg.name} {pkg.version} already exists on {repository}.")
         return
 
@@ -211,7 +235,6 @@ def process_package(pkg: PackageInfo, repository: str) -> None:
 
     run([sys.executable, "-m", "build"], cwd=pkg.path)
     run([sys.executable, "-m", "twine", "check", "dist/*"], cwd=pkg.path)
-
     run(
         [sys.executable, "-m", "twine", "upload", "dist/*"],
         cwd=pkg.path,
@@ -242,8 +265,12 @@ def main() -> int:
     for pkg in ordered:
         print(f"  - {pkg.name} ({pkg.version})")
 
+    print()
+    print("Checking remote versions in parallel...")
+    exists_map = check_versions_in_parallel(ordered, args.repository)
+
     for pkg in ordered:
-        process_package(pkg, args.repository)
+        process_package(pkg, args.repository, exists_map[pkg.name])
 
     print()
     print("All packages processed successfully.")
