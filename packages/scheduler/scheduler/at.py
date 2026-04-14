@@ -42,7 +42,9 @@ class At(BaseScheduler):
         if self._run_count == 0 or self.day == 0 or self._last_fire_at is None:
             return target
 
-        min_allowed = self._last_fire_at + timedelta(days=self.day)
+        min_allowed = self._with_schedule_time(
+            self._last_fire_at + timedelta(days=self.day)
+        )
 
         while target < min_allowed:
             target += self._schedule_step()

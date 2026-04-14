@@ -111,6 +111,15 @@ class AtNextTargetTests(unittest.TestCase):
             datetime(2025, 1, 13, 10, 0, 0),
         )
 
+    def test_day_one_should_not_skip_to_day_after_tomorrow_when_last_fire_is_late(self) -> None:
+        sch = At(hour=8, minute=0, second=0, day=1)
+        sch._run_count = 1
+        sch._last_fire_at = datetime(2025, 6, 1, 23, 0, 0)
+        self.assertEqual(
+            sch._next_target(sch._last_fire_at),
+            datetime(2025, 6, 2, 8, 0, 0),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
