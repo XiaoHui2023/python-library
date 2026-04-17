@@ -1,0 +1,14 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "python-library-fs-change-hook"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "watchdog>=6.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["fs_change_hook"]
