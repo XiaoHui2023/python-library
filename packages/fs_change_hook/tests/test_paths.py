@@ -10,14 +10,25 @@ from fs_change_hook.paths import expand_watch_paths, watch_paths_exist
 
 
 class TestExpandWatchPaths(unittest.TestCase):
-    def test_empty_raises(self) -> None:
-        with self.assertRaises(ValueError) as ctx:
-            expand_watch_paths([])
-        self.assertIn("at least one", str(ctx.exception).lower())
+    def test_empty_returns_empty_list(self) -> None:
+        self.assertEqual(expand_watch_paths([]), [])
 
-    def test_literal_missing_raises(self) -> None:
-        with self.assertRaises(FileNotFoundError):
-            expand_watch_paths([Path("___nonexistent_fs_change_hook___")])
+    def test_all_blank_entries_returns_empty_list(self) -> None:
+        self.assertEqual(expand_watch_paths(["", "  ", "\t"]), [])
+
+    def test_blank_entries_skipped_mixed_ok(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td) / "a.txt"
+            f.write_text("x", encoding="utf-8")
+            roots = expand_watch_paths(["", "  ", f])
+            self.assertEqual(len(roots), 1)
+            self.assertEqual(roots[0].resolve(), f.resolve())
+
+    def test_literal_missing_returns_empty(self) -> None:
+        self.assertEqual(
+            expand_watch_paths([Path("___nonexistent_fs_change_hook___")]),
+            [],
+        )
 
     def test_literal_file_ok(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -34,12 +45,10 @@ class TestExpandWatchPaths(unittest.TestCase):
             self.assertEqual(len(roots), 1)
             self.assertEqual(roots[0].resolve(), d.resolve())
 
-    def test_glob_no_match_raises(self) -> None:
+    def test_glob_no_match_returns_empty(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             pattern = str(Path(td) / "no_such_*.txt")
-            with self.assertRaises(FileNotFoundError) as ctx:
-                expand_watch_paths([pattern])
-            self.assertIn("no paths matched", str(ctx.exception).lower())
+            self.assertEqual(expand_watch_paths([pattern]), [])
 
     def test_glob_finds_files(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -69,6 +78,22 @@ class TestExpandWatchPaths(unittest.TestCase):
 
     def test_watch_paths_exist_literal_missing_false(self) -> None:
         self.assertFalse(watch_paths_exist([Path("___no_such_exists_check___")]))
+
+    def test_watch_paths_exist_mixed_missing_and_ok_is_true(self) -> None:
+        """单条不存在不导致失败；只要列表中另有任一条能匹配即 True。"""
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td) / "a.txt"
+            f.write_text("x", encoding="utf-8")
+            self.assertTrue(
+                watch_paths_exist([Path("___no_such_exists_check___"), f]),
+            )
+
+    def test_watch_paths_exist_blank_skipped(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td) / "a.txt"
+            f.write_text("x", encoding="utf-8")
+            self.assertTrue(watch_paths_exist(["", "  ", f]))
+        self.assertFalse(watch_paths_exist(["", "  "]))
 
     def test_watch_paths_exist_glob_zero_false_no_raise(self) -> None:
         with tempfile.TemporaryDirectory() as td:

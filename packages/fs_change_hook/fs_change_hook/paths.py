@@ -30,43 +30,48 @@ def _with_root(expanded: str, root: Path | None) -> str:
     return str(p)
 
 
+def _is_blank_path_entry(raw: str | Path) -> bool:
+    """展开环境变量与 ``~`` 后无有效字符的路径条目（含纯空白）视为空，应跳过。"""
+    return not _expand_user_vars(raw).strip()
+
+
 def expand_watch_paths(
     paths: Sequence[str | Path],
     *,
     root: str | Path | None = None,
 ) -> list[Path]:
     """
-    - 不含 glob 元字符的路径：按字面解析，必须已存在。
-    - 含 ``* ? [`` 等 glob 的路径：用 ``glob.glob(..., recursive=True)`` 展开；
-      仅当 **glob 返回零个匹配串** 时才报错；随后只保留已存在且为文件或目录的路径。
+    将 ``paths`` 解析为可监视的根路径列表，**不抛错**；无法解析或不适用的条目跳过。
+
+    - 空序列返回空列表。
+    - 展开环境变量与 ``~`` 后为空的条目跳过。
+    - 含 ``* ? [`` 的条目：``glob.glob(..., recursive=True)``；零个匹配则本条目不贡献结果；
+      有匹配则只保留已存在且为文件或目录的路径（断链、管道等跳过）。
+    - 不含 glob 元字符的条目：解析后仅当路径已存在且为文件或目录时纳入，否则跳过。
 
     ``root``：若给出，则对 **相对路径**（展开环境变量与 ``~`` 后仍非绝对路径者）先拼到 ``root`` 下再解析；
     已是绝对路径的条目不受 ``root`` 影响。
     """
     if not paths:
-        raise ValueError("paths must contain at least one path")
+        return []
 
     base = _normalize_root(root)
     seen: dict[str, Path] = {}
 
     for raw in paths:
+        if _is_blank_path_entry(raw):
+            continue
         expanded = _with_root(_expand_user_vars(raw), base)
         if _has_glob_magic(expanded):
-            matches = glob.glob(expanded, recursive=True)
-            if not matches:
-                raise FileNotFoundError(f"no paths matched pattern: {raw!r}")
-            for m in matches:
+            for m in glob.glob(expanded, recursive=True):
                 p = Path(m).resolve(strict=False)
                 if p.exists() and (p.is_file() or p.is_dir()):
                     seen[str(p)] = p
             continue
 
         p = Path(expanded).resolve()
-        if not p.exists():
-            raise FileNotFoundError(f"watch path does not exist: {raw!r}")
-        if not p.is_file() and not p.is_dir():
-            raise ValueError(f"watch path is neither a file nor a directory: {raw!r}")
-        seen[str(p)] = p
+        if p.exists() and (p.is_file() or p.is_dir()):
+            seen[str(p)] = p
 
     return list(seen.values())
 
@@ -77,31 +82,11 @@ def watch_paths_exist(
     root: str | Path | None = None,
 ) -> bool:
     """
-    与 :func:`expand_watch_paths` 使用相同的解析规则（含可选 ``root``），但不抛错，仅判断是否能匹配到
-    **至少一个**已存在的文件或目录。
+    是否与 :func:`expand_watch_paths` 会给出**非空**结果等价（解析规则与 ``root`` 一致）。
 
     - 空序列返回 ``False``。
-    - 字面路径不存在：该条目不匹配，不抛错。
-    - glob 零匹配：该条目不匹配，不抛错。
-    - 任一条目能解析出至少一个存在的文件或目录即返回 ``True``。
+    - 展开后为空的条目跳过。
+    - 字面路径不存在、glob 零匹配、或路径非文件/非目录：该条目不匹配。
+    - 任一条目能解析出至少一个已存在的文件或目录即返回 ``True``。
     """
-    if not paths:
-        return False
-
-    base = _normalize_root(root)
-
-    for raw in paths:
-        expanded = _with_root(_expand_user_vars(raw), base)
-        if _has_glob_magic(expanded):
-            matches = glob.glob(expanded, recursive=True)
-            for m in matches:
-                p = Path(m).resolve(strict=False)
-                if p.exists() and (p.is_file() or p.is_dir()):
-                    return True
-            continue
-
-        p = Path(expanded).resolve()
-        if p.exists() and (p.is_file() or p.is_dir()):
-            return True
-
-    return False
+    return bool(expand_watch_paths(paths, root=root))
