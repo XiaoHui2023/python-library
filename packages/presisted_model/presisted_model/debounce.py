@@ -8,7 +8,12 @@ F = TypeVar("F", bound=Callable[[], None])
 
 
 class DebouncedAction:
-    """在 `delay` 秒内多次 `schedule`，只在静止满 `delay` 后执行最后一次预定的动作。"""
+    """
+    首次 `schedule` 启动固定 `delay` 计时；同一轮内后续 `schedule` 不重置计时器，
+    计时结束时执行一次回调（应读取当前最新状态）。执行后进入下一轮，再次 `schedule` 才重新计时。
+
+    与「每次 schedule 都重置」的防抖不同：持续触发也会在首轮 `delay` 后落盘，不会因抖动无限推迟。
+    """
 
     __slots__ = ("_delay", "_fn", "_timer", "_lock", "_cancelled")
 
@@ -26,8 +31,7 @@ class DebouncedAction:
             return
         with self._lock:
             if self._timer is not None:
-                self._timer.cancel()
-                self._timer = None
+                return
             timer = threading.Timer(self._delay, self._run)
             timer.daemon = True
             self._timer = timer

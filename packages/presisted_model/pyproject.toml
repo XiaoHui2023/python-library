@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "python-library-presisted-model"
-version = "0.1.1"
+version = "0.1.2"
 description = "Pydantic models with debounced JSON persistence (field assignment triggers save)."
 readme = "README.md"
 requires-python = ">=3.10"
