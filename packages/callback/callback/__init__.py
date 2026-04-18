@@ -1,11 +1,3 @@
-"""callback：用类型注解定义「载荷」，用 @子类 托管处理函数，再 trigger / atrigger 执行并取回同一实例读状态。
-
-用法概要：
-- 子类用注解声明字段（不含 ClassVar、不以 _ 开头）；同步默认，异步子类设 ``_async = True``。
-- ``@MyCb`` 注册 ``def h(cb: MyCb)`` 或 ``def h()``；处理函数里通常就地修改 ``cb`` 的字段。
-- ``MyCb.trigger(**kw)`` 会阻塞到所有同步处理结束；``await MyCb.atrigger(**kw)`` 用于异步处理。
-- 返回值为本次触发的 ``MyCb`` 实例，用于读取更新后的字段。
-"""
 from __future__ import annotations
 from typing import ClassVar, Callable, TypeVar, get_origin
 import asyncio
@@ -32,6 +24,8 @@ class Callback():
         @A
         def func(cb: A) -> None: ...
 
+    同一函数对象若再次 ``@A`` 注册，不会重复加入列表，触发时该函数只执行一次（不同函数则各执行一次）。
+
     实现要点：同步 ``trigger`` 使用线程池并等待完成；无注册函数时仍会构造并返回实例。
     """
     function_registry: ClassVar[dict[str, list[Callable]]] = {}
@@ -53,7 +47,6 @@ class Callback():
         return super().__new__(cls)
 
     def __init__(self, *args, **kwargs):
-        """初始化事件实例"""
         field_names = self.__class__._field_names()
         for i, arg in enumerate(args):
             if i < len(field_names):
@@ -68,7 +61,7 @@ class Callback():
 
     @classmethod
     def register(cls, func: Callable):
-        """注册函数"""
+        """注册函数；同一 ``func`` 对象不会重复加入。"""
         try:
             if cls.__name__ not in cls.function_registry:
                 cls.function_registry[cls.__name__] = []

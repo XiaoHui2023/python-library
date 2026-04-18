@@ -32,7 +32,7 @@ assert cb.amount == 101
 ## 规则（实现相关）
 
 - 载荷字段：类体里**类型注解**的普通属性；`ClassVar`、以下划线 `_` 开头的名字**不算**字段。
-- 注册：`@MyCallback` 装饰函数；可 `def h(cb: MyCallback)` 或 `def h()`（无参）。
+- 注册：`@MyCallback` 装饰函数；可 `def h(cb: MyCallback)` 或 `def h()`（无参）。**同一函数对象**若再次装饰注册，只会保留一份，触发时该函数**不会执行两次**（两个不同的函数会各执行一次）。
 - 同步 / 异步必须一致：同步类不能注册 `async def`；异步类（`_async = True`）不能注册普通 `def`。
 - 可重写钩子：`before_trigger` / `after_trigger`（同步），`before_atrigger` / `after_atrigger`（异步）。
 - 无注册函数时，`trigger` / `atrigger` 仍会构造并返回实例。
