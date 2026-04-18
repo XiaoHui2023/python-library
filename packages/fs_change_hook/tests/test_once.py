@@ -66,6 +66,25 @@ class TestFSChangeOnce(unittest.TestCase):
 
         asyncio.run(run())
 
+    def test_wait_aborts_when_should_abort_true(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "w.txt"
+            p.write_text("0", encoding="utf-8")
+            once = FSChangeOnce([p])
+            stop = threading.Event()
+
+            def flip_abort() -> None:
+                time.sleep(0.2)
+                stop.set()
+
+            threading.Thread(target=flip_abort, daemon=True).start()
+            r = once.wait(
+                timeout=5.0,
+                poll_interval=0.05,
+                should_abort=stop.is_set,
+            )
+            self.assertEqual(r, OnceWatchEnd.ABORTED)
+
 
 if __name__ == "__main__":
     unittest.main()

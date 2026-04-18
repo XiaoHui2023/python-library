@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from collections.abc import Sequence
+import time
+from collections.abc import Callable, Sequence
 from enum import Enum
 from pathlib import Path
 
@@ -16,6 +17,7 @@ class OnceWatchEnd(str, Enum):
 
     CHANGED = "changed"
     TIMEOUT = "timeout"
+    ABORTED = "aborted"
 
 
 class FSChangeOnce:
@@ -55,12 +57,25 @@ class FSChangeOnce:
             self._end = OnceWatchEnd.CHANGED
         self._done.set()
 
-    def wait(self, timeout: float | None = None) -> OnceWatchEnd:
+    def wait(
+        self,
+        timeout: float | None = None,
+        *,
+        poll_interval: float = 0.5,
+        should_abort: Callable[[], bool] | None = None,
+    ) -> OnceWatchEnd:
         """
         阻塞直到首次匹配变更，或超过 ``timeout`` 秒（``None`` 表示无限等待）。
 
+        ``poll_interval``：为支持 ``should_abort`` 时底层 ``Event.wait`` 的分片间隔（秒），须大于 0。
+
+        ``should_abort``：若在某次分片等待前返回 True，则停止观察者并返回 ``ABORTED``（例如进程收到退出信号）。
+
         返回结束原因；结束后 :attr:`last_end` 与返回值一致。
         """
+        if poll_interval <= 0:
+            raise ValueError("poll_interval must be > 0")
+
         with self._cb_lock:
             self._end = None
         self._done.clear()
@@ -75,12 +90,38 @@ class FSChangeOnce:
         hook.start()
         signalled = False
         try:
-            signalled = self._done.wait(timeout)
-            if not signalled:
-                hook.stop()
-                with self._cb_lock:
-                    if self._end is None:
-                        self._end = OnceWatchEnd.TIMEOUT
+            deadline = None if timeout is None else time.monotonic() + timeout
+            while True:
+                if should_abort is not None and should_abort():
+                    hook.stop()
+                    with self._cb_lock:
+                        if self._end is None:
+                            self._end = OnceWatchEnd.ABORTED
+                    break
+
+                chunk = poll_interval
+                if deadline is not None:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        hook.stop()
+                        with self._cb_lock:
+                            if self._end is None:
+                                self._end = OnceWatchEnd.TIMEOUT
+                        break
+                    chunk = min(chunk, remaining)
+
+                signalled = self._done.wait(chunk)
+                if signalled:
+                    break
+
+                if deadline is not None:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        hook.stop()
+                        with self._cb_lock:
+                            if self._end is None:
+                                self._end = OnceWatchEnd.TIMEOUT
+                        break
         finally:
             hook.stop()
             self._hook = None
@@ -94,6 +135,17 @@ class FSChangeOnce:
         self._last_end = out
         return out
 
-    async def wait_async(self, timeout: float | None = None) -> OnceWatchEnd:
+    async def wait_async(
+        self,
+        timeout: float | None = None,
+        *,
+        poll_interval: float = 0.5,
+        should_abort: Callable[[], bool] | None = None,
+    ) -> OnceWatchEnd:
         """异步等待；内部 ``asyncio.to_thread(self.wait, …)``，不阻塞事件循环。"""
-        return await asyncio.to_thread(self.wait, timeout)
+        return await asyncio.to_thread(
+            self.wait,
+            timeout,
+            poll_interval=poll_interval,
+            should_abort=should_abort,
+        )
