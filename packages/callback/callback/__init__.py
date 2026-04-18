@@ -8,6 +8,19 @@ from concurrent.futures import ThreadPoolExecutor
 logger = logging.getLogger(__name__)
 T = TypeVar("T", bound="Callback")
 
+
+def _annotation_is_classvar(tp: object) -> bool:
+    """Whether ``tp`` is a :class:`typing.ClassVar` annotation (resolved or postponed string)."""
+    if isinstance(tp, str):
+        s = tp.strip()
+        return (
+            s.startswith("ClassVar[")
+            or s.startswith("typing.ClassVar[")
+            or s.startswith("typing_extensions.ClassVar[")
+        )
+    return get_origin(tp) is ClassVar
+
+
 class Callback():
     """
     回调基类：注解字段为载荷；注册函数在 trigger 时并发执行；返回的实例可被读取/被 handler 修改。
@@ -181,13 +194,13 @@ class Callback():
                 # 跳过 object 和框架基类 Callback 本身
                 continue
 
-            # 把 postponed annotations 的字符串还原成真实类型
-            annotations = inspect.get_annotations(base, eval_str=True)
+            # 只收集字段名，不 eval 注解（避免 TYPE_CHECKING 中的符号在运行时不存在）
+            annotations = inspect.get_annotations(base, eval_str=False)
 
             for name, tp in annotations.items():
                 if name.startswith("_"):
                     continue
-                if get_origin(tp) is ClassVar:
+                if _annotation_is_classvar(tp):
                     continue
                 merged[name] = tp
 
