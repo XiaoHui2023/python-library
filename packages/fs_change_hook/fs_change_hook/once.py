@@ -57,6 +57,16 @@ class FSChangeOnce:
             self._end = OnceWatchEnd.CHANGED
         self._done.set()
 
+    def _resolve_out(self, signalled: bool) -> OnceWatchEnd:
+        if self._end is not None:
+            out = self._end
+        elif signalled:
+            out = OnceWatchEnd.CHANGED
+        else:
+            out = OnceWatchEnd.TIMEOUT
+        self._last_end = out
+        return out
+
     def wait(
         self,
         timeout: float | None = None,
@@ -67,15 +77,11 @@ class FSChangeOnce:
         """
         阻塞直到首次匹配变更，或超过 ``timeout`` 秒（``None`` 表示无限等待）。
 
-        ``poll_interval``：为支持 ``should_abort`` 时底层 ``Event.wait`` 的分片间隔（秒），须大于 0。
+        若未提供 ``should_abort``，内部使用单次 ``threading.Event.wait(timeout)``，行为与早期版本一致。
 
-        ``should_abort``：若在某次分片等待前返回 True，则停止观察者并返回 ``ABORTED``（例如进程收到退出信号）。
-
-        返回结束原因；结束后 :attr:`last_end` 与返回值一致。
+        若提供 ``should_abort``，则在分片等待中周期性检查；``timeout`` 为 ``None`` 时仍可响应中止，
+        不会无限阻塞在单次 ``wait`` 上。此时 ``poll_interval`` 为分片长度（秒），必须大于 0。
         """
-        if poll_interval <= 0:
-            raise ValueError("poll_interval must be > 0")
-
         with self._cb_lock:
             self._end = None
         self._done.clear()
@@ -90,50 +96,64 @@ class FSChangeOnce:
         hook.start()
         signalled = False
         try:
-            deadline = None if timeout is None else time.monotonic() + timeout
-            while True:
-                if should_abort is not None and should_abort():
+            if should_abort is None:
+                signalled = self._done.wait(timeout)
+                if not signalled:
                     hook.stop()
                     with self._cb_lock:
                         if self._end is None:
-                            self._end = OnceWatchEnd.ABORTED
-                    break
-
-                chunk = poll_interval
-                if deadline is not None:
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        hook.stop()
-                        with self._cb_lock:
-                            if self._end is None:
-                                self._end = OnceWatchEnd.TIMEOUT
-                        break
-                    chunk = min(chunk, remaining)
-
-                signalled = self._done.wait(chunk)
-                if signalled:
-                    break
-
-                if deadline is not None:
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        hook.stop()
-                        with self._cb_lock:
-                            if self._end is None:
-                                self._end = OnceWatchEnd.TIMEOUT
-                        break
+                            self._end = OnceWatchEnd.TIMEOUT
+            else:
+                if poll_interval <= 0:
+                    raise ValueError("poll_interval must be > 0 when should_abort is provided")
+                signalled = self._wait_chunked(hook, timeout, poll_interval, should_abort)
         finally:
             hook.stop()
             self._hook = None
 
-        if self._end is not None:
-            out = self._end
-        elif signalled:
-            out = OnceWatchEnd.CHANGED
-        else:
-            out = OnceWatchEnd.TIMEOUT
-        self._last_end = out
-        return out
+        return self._resolve_out(signalled)
+
+    def _wait_chunked(
+        self,
+        hook: FSChangeHook,
+        timeout: float | None,
+        poll_interval: float,
+        should_abort: Callable[[], bool],
+    ) -> bool:
+        deadline = None if timeout is None else time.monotonic() + timeout
+        signalled = False
+        while True:
+            if should_abort():
+                hook.stop()
+                with self._cb_lock:
+                    if self._end is None:
+                        self._end = OnceWatchEnd.ABORTED
+                break
+
+            chunk = poll_interval
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    hook.stop()
+                    with self._cb_lock:
+                        if self._end is None:
+                            self._end = OnceWatchEnd.TIMEOUT
+                    break
+                chunk = min(chunk, remaining)
+
+            signalled = self._done.wait(chunk)
+            if signalled:
+                break
+
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    hook.stop()
+                    with self._cb_lock:
+                        if self._end is None:
+                            self._end = OnceWatchEnd.TIMEOUT
+                    break
+        return signalled
 
     async def wait_async(
         self,
