@@ -1,3 +1,11 @@
+"""callback：用类型注解定义「载荷」，用 @子类 托管处理函数，再 trigger / atrigger 执行并取回同一实例读状态。
+
+用法概要：
+- 子类用注解声明字段（不含 ClassVar、不以 _ 开头）；同步默认，异步子类设 ``_async = True``。
+- ``@MyCb`` 注册 ``def h(cb: MyCb)`` 或 ``def h()``；处理函数里通常就地修改 ``cb`` 的字段。
+- ``MyCb.trigger(**kw)`` 会阻塞到所有同步处理结束；``await MyCb.atrigger(**kw)`` 用于异步处理。
+- 返回值为本次触发的 ``MyCb`` 实例，用于读取更新后的字段。
+"""
 from __future__ import annotations
 from typing import ClassVar, Callable, TypeVar, get_origin
 import asyncio
@@ -10,20 +18,21 @@ T = TypeVar("T", bound="Callback")
 
 class Callback():
     """
-    回调
+    回调基类：注解字段为载荷；注册函数在 trigger 时并发执行；返回的实例可被读取/被 handler 修改。
 
-    定义回调结构时：
+    定义结构（字段即构造 ``trigger`` 的参数）::
         class A(Callback):
             attr: type
 
-    触发回调时：
-        cb = A.trigger(attr=value) # 同步
-        cb = await A.atrigger(attr=value) # 异步
+    触发（同步会等到全部注册函数结束；异步需 ``_async = True`` 且用 ``atrigger``）::
+        cb = A.trigger(attr=value)
+        cb = await A.atrigger(attr=value)
 
-    为函数注册回调时：
+    注册处理函数（子类作装饰器；签名可 ``(cb: A)`` 或 ``()``）::
         @A
-        def func(cb:A):
-            pass
+        def func(cb: A) -> None: ...
+
+    实现要点：同步 ``trigger`` 使用线程池并等待完成；无注册函数时仍会构造并返回实例。
     """
     function_registry: ClassVar[dict[str, list[Callable]]] = {}
     """注册的函数列表"""
