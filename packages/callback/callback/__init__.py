@@ -1,9 +1,13 @@
 from __future__ import annotations
-from typing import ClassVar, Callable, TypeVar, get_origin
+
 import asyncio
-import logging
 import inspect
+import logging
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Callable, ClassVar, TypeVar, get_origin
+
+from pydantic import BaseModel, ConfigDict
+from pydantic._internal._model_construction import ModelMetaclass
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T", bound="Callback")
@@ -21,32 +25,64 @@ def _annotation_is_classvar(tp: object) -> bool:
     return get_origin(tp) is ClassVar
 
 
-class Callback():
-    """
-    回调基类：注解字段为载荷；注册函数在 trigger 时并发执行；返回的实例可被读取/被 handler 修改。
+class CallbackMeta(ModelMetaclass):
+    """构建模型前从类体 ``__annotations__`` 中移除「单下划线前缀且非 ClassVar」的名字。
 
-    定义结构（字段即构造 ``trigger`` 的参数）::
+    这样 ``_x: int`` 仅作类型检查约定、不参与载荷与校验；``_async: ClassVar[bool]`` 等仍保留。
+    """
+
+    def __new__(
+        mcs,
+        cls_name: str,
+        bases: tuple[type[Any], ...],
+        namespace: dict[str, Any],
+        **kwargs: Any,
+    ) -> type:
+        ann = namespace.get("__annotations__")
+        if ann:
+            filtered = {
+                k: v
+                for k, v in ann.items()
+                if (not k.startswith("_")) or _annotation_is_classvar(v)
+            }
+            namespace = {**namespace, "__annotations__": filtered}
+        return super().__new__(mcs, cls_name, bases, namespace, **kwargs)
+
+
+class Callback(BaseModel, metaclass=CallbackMeta):
+    """
+    回调基类：基于 Pydantic :class:`~pydantic.BaseModel`，注解字段为载荷；注册函数在 ``trigger`` 时并发执行；返回的实例可被读取、被 handler 修改。
+
+    定义结构（字段即构造 ``trigger`` 的参数）。可从 ``pydantic`` 导入 ``Field`` 描述默认值与说明等::
+
+        from pydantic import Field
+
         class A(Callback):
-            attr: type
+            attr: str = Field(default="x", description="...")
 
     触发（同步会等到全部注册函数结束；异步需 ``_async = True`` 且用 ``atrigger``）::
+
         cb = A.trigger(attr=value)
         cb = await A.atrigger(attr=value)
 
     注册处理函数（子类作装饰器；签名可 ``(cb: A)`` 或 ``()``）::
+
         @A
         def func(cb: A) -> None: ...
 
     同一函数对象若再次 ``@A`` 注册，不会重复加入列表，触发时该函数只执行一次（不同函数则各执行一次）。
 
-    实现要点：同步 ``trigger`` 使用线程池并等待完成；无注册函数时仍会构造并返回实例。
+    实现要点：同步 ``trigger`` 使用线程池并等待完成；无注册函数时仍会构造并返回实例。实例化经 Pydantic 校验与默认值处理。
     """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
+
     function_registry: ClassVar[dict[str, list[Callable]]] = {}
     """注册的函数列表"""
     _async: ClassVar[bool] = False
     """是否异步"""
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: Any, **kwargs: Any) -> Any:
         """支持把 Callback 子类直接当装饰器使用"""
         if len(args) == 1 and not kwargs and callable(args[0]):
             func = args[0]
@@ -59,18 +95,31 @@ class Callback():
             return func
         return super().__new__(cls)
 
-    def __init__(self, *args, **kwargs):
-        field_names = self.__class__._field_names()
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        cls = self.__class__
+        field_names = cls._field_names()
+        merged: dict[str, Any] = {}
         for i, arg in enumerate(args):
             if i < len(field_names):
-                setattr(self, field_names[i], arg)
+                merged[field_names[i]] = arg
             else:
                 raise ValueError(f"参数过多[{i}]: {arg}")
         for key, value in kwargs.items():
             if key in field_names:
-                setattr(self, key, value)
+                merged[key] = value
             else:
                 raise ValueError(f"未知属性[{key}]: {value}")
+        # 前向引用等导致模型未完成定义时，校验器不可用；与旧版 Callback 一致仅做字段赋值
+        if not cls.__pydantic_complete__:
+            tmp = cls.model_construct(**merged)
+            self.__dict__.update(tmp.__dict__)
+            object.__setattr__(self, "__pydantic_fields_set__", tmp.__pydantic_fields_set__)
+            object.__setattr__(self, "__pydantic_extra__", tmp.__pydantic_extra__)
+            priv = tmp.__pydantic_private__
+            if priv is not None:
+                object.__setattr__(self, "__pydantic_private__", priv)
+            return
+        super().__init__(**merged)
 
     @classmethod
     def register(cls, func: Callable):
@@ -85,7 +134,7 @@ class Callback():
             raise e
 
     @classmethod
-    def trigger(cls:type[T],*args,**kwargs) -> T:
+    def trigger(cls: type[T], *args: Any, **kwargs: Any) -> T:
         """同步触发回调"""
         try:
             self = cls(*args, **kwargs)
@@ -104,7 +153,7 @@ class Callback():
             raise e
 
     @classmethod
-    async def atrigger(cls:type[T],*args,**kwargs) -> T:
+    async def atrigger(cls: type[T], *args: Any, **kwargs: Any) -> T:
         """异步触发回调"""
         try:
             self = cls(*args, **kwargs)
@@ -147,8 +196,10 @@ class Callback():
 
         params = list(sig.parameters.values())
         positional = [
-            p for p in params
-            if p.kind in (
+            p
+            for p in params
+            if p.kind
+            in (
                 inspect.Parameter.POSITIONAL_ONLY,
                 inspect.Parameter.POSITIONAL_OR_KEYWORD,
             )
@@ -169,8 +220,10 @@ class Callback():
 
         params = list(sig.parameters.values())
         positional = [
-            p for p in params
-            if p.kind in (
+            p
+            for p in params
+            if p.kind
+            in (
                 inspect.Parameter.POSITIONAL_ONLY,
                 inspect.Parameter.POSITIONAL_OR_KEYWORD,
             )
@@ -190,11 +243,9 @@ class Callback():
     def _field_names(cls) -> list[str]:
         merged: dict[str, object] = {}
         for base in reversed(cls.__mro__):
-            if base is object or base is Callback:
-                # 跳过 object 和框架基类 Callback 本身
+            if base is object or base is Callback or base is BaseModel:
                 continue
 
-            # 只收集字段名，不 eval 注解（避免 TYPE_CHECKING 中的符号在运行时不存在）
             annotations = inspect.get_annotations(base, eval_str=False)
 
             for name, tp in annotations.items():
@@ -205,6 +256,7 @@ class Callback():
                 merged[name] = tp
 
         return list(merged.keys())
+
 
 __all__ = [
     "Callback",
