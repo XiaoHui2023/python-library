@@ -20,7 +20,8 @@ class TestPersisted(unittest.TestCase):
             p = Path(d) / "s.json"
             s = CounterState.load(p, debounce_seconds=0.2)
             self.assertEqual(s.n, 0)
-            s._flush_persist()
+            s.n = 0
+            time.sleep(0.25)
             self.assertTrue(p.exists())
 
     def test_debounce_writes_last_value(self) -> None:
@@ -42,7 +43,7 @@ class TestPersisted(unittest.TestCase):
             a = CounterState.load(p, debounce_seconds=0.05)
             a.n = 10
             a.label = "x"
-            a._flush_persist()
+            time.sleep(0.15)
             b = CounterState.load(p, debounce_seconds=0.05)
             self.assertEqual(b.n, 10)
             self.assertEqual(b.label, "x")

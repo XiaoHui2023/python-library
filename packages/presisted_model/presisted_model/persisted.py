@@ -14,19 +14,6 @@ from presisted_model.storage import atomic_write_json
 _registry: dict[int, weakref.ReferenceType[PresistedModel]] = {}
 
 
-def _flush_all_registered() -> None:
-    for r in list(_registry.values()):
-        m = r()
-        if m is not None:
-            try:
-                m._flush_persist()
-            except Exception:
-                pass
-
-
-atexit.register(_flush_all_registered)
-
-
 class PresistedModel(BaseModel):
     """
     用 Pydantic 描述结构；子类通过 `load` 从文件恢复或新建，并在字段赋值后按防抖间隔落盘。
@@ -98,8 +85,22 @@ class PresistedModel(BaseModel):
             return
         atomic_write_json(p, self, indent=json_indent)
 
-    def _flush_persist(self) -> None:
-        """立即将当前状态写入文件（仍走同一存储路径）。"""
-        debouncer: DebouncedAction | None = getattr(self, "_pm_debounce", None)
-        if debouncer is not None:
-            debouncer.flush()
+
+def _pm_flush(model: PresistedModel) -> None:
+    """仅本模块与进程退出时使用；不对外暴露。"""
+    debouncer: DebouncedAction | None = getattr(model, "_pm_debounce", None)
+    if debouncer is not None:
+        debouncer.flush()
+
+
+def _flush_all_registered() -> None:
+    for r in list(_registry.values()):
+        m = r()
+        if m is not None:
+            try:
+                _pm_flush(m)
+            except Exception:
+                pass
+
+
+atexit.register(_flush_all_registered)
