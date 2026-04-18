@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from fs_change_hook.paths import expand_watch_paths
+from fs_change_hook.paths import expand_watch_paths, watch_paths_exist
 
 
 class TestExpandWatchPaths(unittest.TestCase):
@@ -57,6 +57,58 @@ class TestExpandWatchPaths(unittest.TestCase):
             f.write_text("x", encoding="utf-8")
             roots = expand_watch_paths([f, f])
             self.assertEqual(len(roots), 1)
+
+    def test_watch_paths_exist_empty_false(self) -> None:
+        self.assertFalse(watch_paths_exist([]))
+
+    def test_watch_paths_exist_literal_true(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td) / "a.txt"
+            f.write_text("x", encoding="utf-8")
+            self.assertTrue(watch_paths_exist([f]))
+
+    def test_watch_paths_exist_literal_missing_false(self) -> None:
+        self.assertFalse(watch_paths_exist([Path("___no_such_exists_check___")]))
+
+    def test_watch_paths_exist_glob_zero_false_no_raise(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            pattern = str(Path(td) / "nope_*.txt")
+            self.assertFalse(watch_paths_exist([pattern]))
+
+    def test_watch_paths_exist_glob_true(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            (base / "e1.txt").write_text("a", encoding="utf-8")
+            self.assertTrue(watch_paths_exist([str(base / "e*.txt")]))
+
+    def test_expand_relative_with_root(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "proj"
+            root.mkdir()
+            f = root / "sub" / "rel.txt"
+            f.parent.mkdir(parents=True)
+            f.write_text("x", encoding="utf-8")
+            roots = expand_watch_paths(["sub/rel.txt"], root=root)
+            self.assertEqual(len(roots), 1)
+            self.assertEqual(roots[0].resolve(), f.resolve())
+
+    def test_expand_absolute_entry_ignores_root(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td) / "abs.txt"
+            f.write_text("x", encoding="utf-8")
+            other = Path(td) / "other"
+            other.mkdir()
+            roots = expand_watch_paths([f], root=other)
+            self.assertEqual(len(roots), 1)
+            self.assertEqual(roots[0].resolve(), f.resolve())
+
+    def test_watch_paths_exist_relative_with_root(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "p"
+            root.mkdir()
+            (root / "a.txt").write_text("x", encoding="utf-8")
+            self.assertTrue(watch_paths_exist(["a.txt"], root=root))
+            self.assertFalse(watch_paths_exist(["missing.txt"], root=root))
 
 
 if __name__ == "__main__":

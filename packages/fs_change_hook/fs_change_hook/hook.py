@@ -31,6 +31,8 @@ class FSChangeHook:
 
     ``debounce_seconds > 0`` 时启用防抖：路径上连续触发事件会重置计时，仅在最后一次变更后
     经过 ``debounce_seconds`` 仍无新事件时才调用回调（合并为一次）。
+
+    ``root``：若给出，则 ``paths`` 中相对路径（见 :func:`expand_watch_paths`）相对于该根目录解析。
     """
 
     def __init__(
@@ -38,13 +40,14 @@ class FSChangeHook:
         paths: Sequence[str | Path],
         *callbacks: Callback,
         debounce_seconds: float = 0.0,
+        root: str | Path | None = None,
     ) -> None:
         if debounce_seconds < 0:
             raise ValueError("debounce_seconds must be >= 0")
         self._debounce_seconds = debounce_seconds
         self._debounce_timer: threading.Timer | None = None
 
-        self._roots: list[Path] = expand_watch_paths(paths)
+        self._roots: list[Path] = expand_watch_paths(paths, root=root)
         self._callbacks: list[Callback] = list(callbacks)
         self._lock = threading.RLock()
         self._observer: Observer | None = None

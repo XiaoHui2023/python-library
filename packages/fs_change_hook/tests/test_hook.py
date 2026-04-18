@@ -18,8 +18,17 @@ def _wait_event(ev: threading.Event, seconds: float = 5.0) -> bool:
 
 
 class TestFSChangeHook(unittest.TestCase):
-    def test_package_exports_only_fs_change_hook(self) -> None:
-        self.assertEqual(fs_change_hook.__all__, ["FSChangeHook"])
+    def test_package_exports(self) -> None:
+        self.assertEqual(
+            fs_change_hook.__all__,
+            [
+                "FSChangeHook",
+                "FSChangeOnce",
+                "OnceWatchEnd",
+                "expand_watch_paths",
+                "watch_paths_exist",
+            ],
+        )
         self.assertIs(fs_change_hook.FSChangeHook, FSChangeHook)
 
     def test_register_and_decorator(self) -> None:
@@ -190,6 +199,27 @@ class TestFSChangeHook(unittest.TestCase):
                 time.sleep(0.25)
                 f.write_text("1", encoding="utf-8")
                 self.assertTrue(_wait_event(hit), "glob-expanded path not watched")
+            finally:
+                hook.stop()
+
+    def test_relative_path_with_root(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "app"
+            root.mkdir()
+            p = root / "cfg" / "x.txt"
+            p.parent.mkdir(parents=True)
+            p.write_text("0", encoding="utf-8")
+            hit = threading.Event()
+
+            def on_change() -> None:
+                hit.set()
+
+            hook = FSChangeHook(["cfg/x.txt"], on_change, root=root)
+            hook.start()
+            try:
+                time.sleep(0.25)
+                p.write_text("1", encoding="utf-8")
+                self.assertTrue(_wait_event(hit), "watch with root failed")
             finally:
                 hook.stop()
 
