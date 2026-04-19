@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import signal
 import threading
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -58,6 +59,7 @@ class PatchBay:
         self._runner: web.AppRunner | None = None
         self._site: web.TCPSite | None = None
         self._app: web.Application | None = None
+        self._aclose_done = False
 
     @property
     def config(self) -> PatchBayConfig:
@@ -91,6 +93,7 @@ class PatchBay:
 
     async def serve(self) -> None:
         """启动 WebSocket 服务，直到 aclose()。"""
+        self._aclose_done = False
         self._loop = asyncio.get_running_loop()
         self._shutdown.clear()
         app = self._build_app()
@@ -105,8 +108,41 @@ class PatchBay:
         logger.info("PatchBay WebSocket at ws://%s:%s/ws", eff_host, eff_port)
         await self._shutdown.wait()
 
+    async def run(self) -> None:
+        """等价于 ``serve()``：启动服务并在当前协程中阻塞，直至 ``aclose()`` 或收到退出信号 / 主任务取消。
+
+        适合 ``asyncio.run(patch_bay.run())`` 占满主线程；Ctrl+C 会触发清理后退出。
+        """
+        loop = asyncio.get_running_loop()
+        handlers: list[int] = []
+
+        def _interrupt() -> None:
+            self._shutdown.set()
+
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, _interrupt)
+                handlers.append(sig)
+            except (NotImplementedError, RuntimeError, ValueError, OSError):
+                pass
+        try:
+            await self.serve()
+        except asyncio.CancelledError:
+            self._shutdown.set()
+            raise
+        finally:
+            for sig in handlers:
+                try:
+                    loop.remove_signal_handler(sig)
+                except Exception:
+                    pass
+            await self.aclose()
+
     async def aclose(self) -> None:
         """停止服务。"""
+        if self._aclose_done:
+            return
+        self._aclose_done = True
         emit_listeners(self._listeners, "on_listen_stopping")
         self._shutdown.set()
         if self._site is not None:

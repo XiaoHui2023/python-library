@@ -14,6 +14,7 @@ import aiohttp
 from aiohttp import ClientWebSocketResponse
 from pydantic import BaseModel, ValidationError
 
+from ._interrupt import wait_until_interrupt
 from .codec.packet import decode_application_packet, encode_application_packet
 from .listeners import JackListener, emit_jack_listeners
 from .protocol import Frame, decode_frame, encode_frame
@@ -180,6 +181,7 @@ class Jack:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._handlers: list[PacketHandler] = []
         self._listeners: list[JackListener] = list(listeners or ())
+        self._aclose_done = False
 
     def register(self, fn: PacketHandler) -> PacketHandler:
         """显式注册收包回调；与 ``jack(fn)`` / ``@jack`` 等价。
@@ -198,6 +200,7 @@ class Jack:
         """启动后台挂入与重试循环；不阻塞等待首次挂入成功。"""
         if self._run_task is not None:
             return
+        self._aclose_done = False
         self._closed.clear()
         self._stopped.clear()
         self._loop = asyncio.get_running_loop()
@@ -207,8 +210,24 @@ class Jack:
         """阻塞直至 `aclose()` 完成，便于应用入口在 `start()` 后保持进程存活（配合 Ctrl+C 在协程外取消或捕获 KeyboardInterrupt）。"""
         await self._stopped.wait()
 
+    async def run(self) -> None:
+        """等价于 ``start()`` + 阻塞直至退出信号或主任务取消 + ``aclose()``。
+
+        适合 ``asyncio.run(jack.run())`` 占满主线程；Ctrl+C 会先结束阻塞再清理连接。
+        """
+        await self.start()
+        try:
+            await wait_until_interrupt()
+        except asyncio.CancelledError:
+            raise
+        finally:
+            await self.aclose()
+
     async def aclose(self) -> None:
         """停止重试循环并关闭与 PatchBay 的链路。"""
+        if self._aclose_done:
+            return
+        self._aclose_done = True
         emit_jack_listeners(self._listeners, "on_stopping")
         self._closed.set()
         if self._run_task is not None:
