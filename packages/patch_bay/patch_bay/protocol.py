@@ -16,7 +16,7 @@ class Frame(BaseModel):
     kind: FrameKind = Field(description="帧类型：握手、发送、投递、确认或错误")
     address: str | None = Field(
         default=None,
-        description="hello：与 PatchBay 配置中 jacks 条目的地址一致",
+        description="可选；Jack 身份以 TCP 远端 host:port 为准，hello 通常不携带",
     )
     payload: bytes | None = Field(default=None, description="业务数据包或错误信息")
     seq: int | None = Field(default=None, description="可选序号，用于 send/ack 配对")

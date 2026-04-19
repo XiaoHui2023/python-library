@@ -3,19 +3,24 @@ from __future__ import annotations
 import asyncio
 import unittest
 
-from aiohttp.test_utils import TestServer
-
 from patch_bay.jack import Jack
 from patch_bay.patchbay import PatchBay
 
 
+async def _run_pb(pb: PatchBay) -> None:
+    await pb.serve()
+
+
 class TestIntegration(unittest.IsolatedAsyncioTestCase):
     async def test_send_receive_with_rule(self) -> None:
+        ja = Jack(0, host="127.0.0.1")
+        jb = Jack(0, host="127.0.0.1")
+        await ja.start()
+        await jb.start()
         cfg = {
-            "listen": 0,
             "jacks": [
-                {"name": "a", "address": "127.0.0.1:7001"},
-                {"name": "b", "address": "127.0.0.1:7002"},
+                {"name": "a", "address": ja.listen_address},
+                {"name": "b", "address": jb.listen_address},
             ],
             "wires": [
                 {"from": "a", "to": "b", "rule": "pass"},
@@ -25,34 +30,35 @@ class TestIntegration(unittest.IsolatedAsyncioTestCase):
             },
         }
         pb = PatchBay(cfg)
-        app = pb.build_application()
-        async with TestServer(app) as server:
-            port = server.port
-            got: asyncio.Future[dict] = asyncio.get_running_loop().create_future()
+        got: asyncio.Future[dict] = asyncio.get_running_loop().create_future()
 
-            jack_b = Jack(port, address="127.0.0.1:7002")
+        jack_b = jb
 
-            @jack_b
-            async def _(payload: dict) -> None:
-                if not got.done():
-                    got.set_result(payload)
+        @jack_b
+        async def _(payload: dict) -> None:
+            if not got.done():
+                got.set_result(payload)
 
-            jack_a = Jack(port, address="127.0.0.1:7001")
-            await jack_a.start()
-            await jack_b.start()
-            await asyncio.sleep(0.2)
-            await jack_a.send({"body": "ping"})
-            data = await asyncio.wait_for(got, timeout=3.0)
-            self.assertEqual(data, {"body": "ping"})
-            await jack_a.aclose()
-            await jack_b.aclose()
+        jack_a = ja
+        pb_task = asyncio.create_task(_run_pb(pb))
+        await asyncio.sleep(0.5)
+        await jack_a.send({"body": "ping"})
+        data = await asyncio.wait_for(got, timeout=3.0)
+        self.assertEqual(data, {"body": "ping"})
+        await pb.aclose()
+        await pb_task
+        await jack_a.aclose()
+        await jack_b.aclose()
 
     async def test_rule_false_drops(self) -> None:
+        ja = Jack(0, host="127.0.0.1")
+        jb = Jack(0, host="127.0.0.1")
+        await ja.start()
+        await jb.start()
         cfg = {
-            "listen": 0,
             "jacks": [
-                {"name": "a", "address": "127.0.0.1:7001"},
-                {"name": "b", "address": "127.0.0.1:7002"},
+                {"name": "a", "address": ja.listen_address},
+                {"name": "b", "address": jb.listen_address},
             ],
             "wires": [
                 {"from": "a", "to": "b", "rule": "block"},
@@ -60,27 +66,25 @@ class TestIntegration(unittest.IsolatedAsyncioTestCase):
             "rules": {"block": "False"},
         }
         pb = PatchBay(cfg)
-        app = pb.build_application()
-        async with TestServer(app) as server:
-            port = server.port
-            got: asyncio.Future[dict] = asyncio.get_running_loop().create_future()
+        got: asyncio.Future[dict] = asyncio.get_running_loop().create_future()
 
-            jack_b = Jack(port, address="127.0.0.1:7002")
+        jack_b = jb
 
-            @jack_b
-            async def _recv(_p: dict) -> None:
-                if not got.done():
-                    got.set_result(_p)
+        @jack_b
+        async def _recv(_p: dict) -> None:
+            if not got.done():
+                got.set_result(_p)
 
-            jack_a = Jack(port, address="127.0.0.1:7001")
-            await jack_a.start()
-            await jack_b.start()
-            await asyncio.sleep(0.2)
-            await jack_a.send({"x": 1})
-            with self.assertRaises(asyncio.TimeoutError):
-                await asyncio.wait_for(got, timeout=0.4)
-            await jack_a.aclose()
-            await jack_b.aclose()
+        jack_a = ja
+        pb_task = asyncio.create_task(_run_pb(pb))
+        await asyncio.sleep(0.5)
+        await jack_a.send({"x": 1})
+        with self.assertRaises(asyncio.TimeoutError):
+            await asyncio.wait_for(got, timeout=0.4)
+        await pb.aclose()
+        await pb_task
+        await jack_a.aclose()
+        await jack_b.aclose()
 
 
 if __name__ == "__main__":

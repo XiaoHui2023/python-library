@@ -5,14 +5,25 @@ from typing import Any, Iterator, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .peer import canonical_peer
+
 
 class JackEntry(BaseModel):
-    """配置里声明的一个 Jack：``name`` 供连线复用；``address`` 须与该机 Jack 握手时上报的一致。"""
+    """配置里声明的一个 Jack：``name`` 供连线复用；``address`` 为该机 **监听** 的 ``host:port``（PatchBay 主动连此地址）。"""
 
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(description="全局唯一名称，供 wires 引用")
-    address: str = Field(description="该机 hello 中的地址，形如 host:port；在 jacks 中唯一")
+    address: str = Field(
+        description="Jack 的 WebSocket 监听地址 host:port；在 jacks 中唯一",
+    )
+
+    @field_validator("address", mode="before")
+    @classmethod
+    def _strip_address(cls, v: Any) -> str:
+        if not isinstance(v, str):
+            raise TypeError("address must be str")
+        return canonical_peer(v)
 
 
 class Wire(BaseModel):
@@ -33,7 +44,7 @@ class PatchBayConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    jacks: list[JackEntry] = Field(description="Jack 清单（name + address）")
+    jacks: list[JackEntry] = Field(description="Jack 清单（name + TCP 远端 host:port）")
     wires: list[Wire] = Field(description="连线；rule 可省略表示恒为真")
     rules: dict[str, str] = Field(
         default_factory=dict,

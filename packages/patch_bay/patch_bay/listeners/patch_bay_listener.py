@@ -8,7 +8,7 @@ class PatchBayListener:
     """
 
     def on_listen_started(self, host: str, port: int) -> None:
-        """PatchBay 已在 ``host:port`` 上开始监听，供各 Jack 挂入（``port`` 为解析后的监听端口）。"""
+        """保留；当前 PatchBay 不向 Jack 提供入站端口，一般不会触发。"""
 
     def on_listen_stopping(self) -> None:
         """即将停止监听并清理资源。"""
