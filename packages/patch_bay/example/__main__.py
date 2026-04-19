@@ -41,12 +41,12 @@ async def demo() -> None:
     async with TestServer(pb.build_application()) as server:
         port = server.port
         loop = asyncio.get_running_loop()
-        got: asyncio.Future[bytes] = loop.create_future()
+        got: asyncio.Future[dict] = loop.create_future()
 
         jack_b = Jack(port, address="127.0.0.1:7002", listeners=[LoggingJackListener()])
 
         @jack_b
-        async def _(payload: bytes) -> None:
+        async def _(payload: dict) -> None:
             if not got.done():
                 got.set_result(payload)
 
@@ -54,11 +54,11 @@ async def demo() -> None:
         await jack_a.start()
         await jack_b.start()
         await asyncio.sleep(0.2)
-        await jack_a.send(b"hello from demo")
+        await jack_a.send({"msg": "hello from demo"})
         data = await asyncio.wait_for(got, timeout=3.0)
         await jack_a.aclose()
         await jack_b.aclose()
-    print("patch_bay demo ok:", data.decode())
+    print("patch_bay demo ok:", data)
 
 
 def main() -> None:

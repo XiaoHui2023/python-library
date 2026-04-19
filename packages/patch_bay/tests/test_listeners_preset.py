@@ -4,10 +4,20 @@ import logging
 import unittest
 from unittest.mock import patch
 
+import msgpack
+
 from patch_bay.listeners import LoggingJackListener, LoggingPatchBayListener
+from patch_bay.listeners._preset import _payload_preview
 
 
 class TestListenersPreset(unittest.TestCase):
+    def test_payload_preview_msgpack_dict(self) -> None:
+        b = msgpack.packb({"msg": "hello from demo"}, use_bin_type=True)
+        s = _payload_preview(b)
+        self.assertIn("msg", s)
+        self.assertIn("hello from demo", s)
+        self.assertNotIn("[二进制]", s)
+
     @patch("patch_bay.listeners._preset._console", None)
     def test_logging_patch_bay_smoke(self) -> None:
         log = logging.getLogger("test.pb")

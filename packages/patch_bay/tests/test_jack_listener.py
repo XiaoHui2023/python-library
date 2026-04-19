@@ -5,6 +5,7 @@ import unittest
 
 from aiohttp.test_utils import TestServer
 
+from patch_bay.codec.packet import decode_application_packet
 from patch_bay.jack import Jack
 from patch_bay.listeners import JackListener
 from patch_bay.patchbay import PatchBay
@@ -43,12 +44,12 @@ class TestJackListener(unittest.IsolatedAsyncioTestCase):
         col = _Collect()
         async with TestServer(app) as server:
             port = server.port
-            got: asyncio.Future[bytes] = asyncio.get_running_loop().create_future()
+            got: asyncio.Future[dict] = asyncio.get_running_loop().create_future()
 
             jack_b = Jack(port, address="127.0.0.1:7002", listeners=[col])
 
             @jack_b
-            async def _(payload: bytes) -> None:
+            async def _(payload: dict) -> None:
                 if not got.done():
                     got.set_result(payload)
 
@@ -57,10 +58,11 @@ class TestJackListener(unittest.IsolatedAsyncioTestCase):
             await jack_b.start()
             await asyncio.sleep(0.2)
             self.assertIn(("on_link_up", ()), col.trace)
-            await jack_a.send(b"ping")
+            await jack_a.send({"body": "ping"})
             data = await asyncio.wait_for(got, timeout=3.0)
-            self.assertEqual(data, b"ping")
-            self.assertIn(("on_incoming_deliver", (b"ping",)), col.trace)
+            self.assertEqual(data, {"body": "ping"})
+            deliver = next(t for t in col.trace if t[0] == "on_incoming_deliver")
+            self.assertEqual(decode_application_packet(deliver[1][0]), {"body": "ping"})
             await jack_a.aclose()
             await jack_b.aclose()
         self.assertIn(("on_stopping", ()), col.trace)
