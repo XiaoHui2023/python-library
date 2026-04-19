@@ -4,7 +4,7 @@
 
 * 中央节点按配置在进程间转发字节流；拓扑由配置给出。
 * PatchBay：中央交换；**主动连接**配置中的各 Jack，再按 `wires` 转发（Jack 与 Jack 不直连）。
-* Jack：业务侧接入点，在本机 **被动监听** WebSocket；只与 PatchBay 这条总线收发，不与其他 Jack 建立关系。
+* Jack：业务侧接入点，在本机 **被动监听** WebSocket；**可多个 PatchBay 同时接入**，`send` 向各交换机 **广播** 同一帧。不与其他 Jack 直连。
 * 每条边可绑定表达式；按当前数据包求值决定是否允许经过。
 * 支持任意数据结构；传输为字节，编码与解析由业务自行决定。
 
@@ -19,7 +19,7 @@
 | `name` | 名称（`wires` 里用名字引用，便于配置复用） |
 | `address` | 该机 **Jack 的监听地址** `host:port`（PatchBay 向此地址发起 WebSocket），须在列表内唯一 |
 
-业务侧 ``Jack(port[, host=…])`` 在本机 ``host:port`` 上挂默认路径 ``/ws``；配置里该机的 `address` 须与可达监听地址一致（``await start()`` 后可用 ``listen_address``）。**不必**在代码里写 `name`。
+业务侧 ``Jack(port[, host=…])`` 默认 ``host=0.0.0.0``；在本机 ``host:port`` 上挂默认路径 ``/ws``。PatchBay 里该机的 `address` 须为对端可达的 IP:端口（本机互通时 ``listen_address`` 为 ``127.0.0.1:port`` 提示）。**不必**在代码里写 `name`。
 
 ### `wires`
 

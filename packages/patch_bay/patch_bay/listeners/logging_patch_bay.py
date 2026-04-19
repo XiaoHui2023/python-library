@@ -26,6 +26,18 @@ class LoggingPatchBayListener(PatchBayListener):
         rich = f"[yellow]🛑[/] [bold]{_esc(self._label)}[/] 要停止监听了。"
         _notify(self._log, plain, rich=rich if _RICH else None)
 
+    def on_jacks_dial_plan(self, jacks: list[tuple[str, str]]) -> None:
+        if not jacks:
+            plain = f"{self._label} 配置里没有 Jack，不会发起连接。"
+            rich = f"[dim]📋[/] [bold]{_esc(self._label)}[/] 配置里没有 Jack。"
+            _notify(self._log, plain, rich=rich if _RICH else None)
+            return
+        parts_plain = [f"「{n}」@{a}" for n, a in jacks]
+        plain = f"{self._label} 将连接：{'; '.join(parts_plain)}"
+        parts_rich = [f"[bold]{_esc(n)}[/] → [cyan]{_esc(a)}[/]" for n, a in jacks]
+        rich = f"[dim]📋[/] [bold]{_esc(self._label)}[/] 将连接：  " + "  ·  ".join(parts_rich)
+        _notify(self._log, plain, rich=rich if _RICH else None)
+
     def on_jack_connected(self, jack_name: str, remote: str | None) -> None:
         tail = f"（来自 {remote}）" if remote else ""
         plain = f"「{jack_name}」接上了。{tail}".strip()

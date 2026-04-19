@@ -91,6 +91,8 @@ class PatchBay:
         self._out_session = aiohttp.ClientSession()
         with self._route_lock:
             jacks = list(self._config.jacks)
+        dial_plan = [(j.name, j.address) for j in jacks]
+        emit_listeners(self._listeners, "on_jacks_dial_plan", dial_plan)
         for j in jacks:
             t = asyncio.create_task(self._maintain_jack(j.name, j.address), name=f"patchbay->{j.name}")
             self._out_tasks.append(t)

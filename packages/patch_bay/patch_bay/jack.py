@@ -147,12 +147,12 @@ def _prepare_handler_arg(fn: Callable[..., Any], decoded: Any) -> tuple[bool, An
 
 
 class Jack:
-    """业务侧接入点：在本机 **被动监听** WebSocket，由 PatchBay 主动连入并转发数据；不与其他 Jack 直连。
+    """业务侧接入点：在本机 **被动监听** WebSocket；**允许多个 PatchBay 同时连入**。
 
-    构造为 ``Jack(port[, host=...])``：在 ``host:port`` 上挂协议路径 ``ws_path``（默认 ``/ws``）。
-    PatchBay 配置里该机条目的 ``address`` 须与本机监听地址一致（``host:port``）。
+    ``send()`` 将同一帧 **广播** 到当前所有已连接 PatchBay（同一序号 ``seq``），由各交换机各自按路由转发。
 
-    **断线**：对端断开后本端清理当前连接；若需长期在线，由 PatchBay 侧重连拨入。
+    构造为 ``Jack(port[, host=...])``：默认 ``host=0.0.0.0``；在 ``host:port`` 上挂 ``ws_path``（默认 ``/ws``）。
+    各 PatchBay 配置里该机 ``address`` 须为对端可达的 ``host:port``。
 
     可选 ``listeners``：``JackListener`` 子类列表（同步回调）。
     """
@@ -161,7 +161,7 @@ class Jack:
         self,
         port: int,
         *,
-        host: str = "127.0.0.1",
+        host: str = "0.0.0.0",
         ws_path: str = "/ws",
         listeners: Sequence[JackListener] | None = None,
     ) -> None:
@@ -177,7 +177,7 @@ class Jack:
         self._site: web.TCPSite | None = None
         self._eff_host: str | None = None
         self._eff_port: int | None = None
-        self._ws: web.WebSocketResponse | None = None
+        self._peers: list[web.WebSocketResponse] = []
         self._ws_lock = asyncio.Lock()
         self._seq = itertools.count(1)
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -188,10 +188,15 @@ class Jack:
 
     @property
     def listen_address(self) -> str:
-        """本 Jack 对外可达的 ``host:port``（须与 PatchBay 配置一致）；须先 ``await start()``。"""
+        """本 Jack 用于填入 PatchBay 的 ``host:port`` 提示；须先 ``await start()``。
+
+        若绑定在 ``0.0.0.0``，此处为 ``127.0.0.1:port`` 便于本机互通；跨机请在配置中写真实网卡 IP。
+        """
         if self._eff_host is None or self._eff_port is None:
             raise RuntimeError("listen_address is only available after start()")
         h = self._eff_host
+        if h == "0.0.0.0":
+            h = "127.0.0.1"
         if ":" in h and not h.startswith("["):
             return f"[{h}]:{self._eff_port}"
         return f"{h}:{self._eff_port}"
@@ -206,10 +211,7 @@ class Jack:
         ws = web.WebSocketResponse()
         await ws.prepare(request)
         async with self._ws_lock:
-            if self._ws is not None and not self._ws.closed:
-                await ws.close()
-                return ws
-            self._ws = ws
+            self._peers.append(ws)
         emit_jack_listeners(self._listeners, "on_link_up")
         try:
             async for msg in ws:
@@ -224,8 +226,10 @@ class Jack:
                     break
         finally:
             async with self._ws_lock:
-                if self._ws is ws:
-                    self._ws = None
+                try:
+                    self._peers.remove(ws)
+                except ValueError:
+                    pass
             emit_jack_listeners(self._listeners, "on_link_down")
         return ws
 
@@ -266,9 +270,14 @@ class Jack:
         self._aclose_done = True
         emit_jack_listeners(self._listeners, "on_stopping")
         async with self._ws_lock:
-            if self._ws is not None and not self._ws.closed:
-                await self._ws.close()
-            self._ws = None
+            to_close = list(self._peers)
+            self._peers.clear()
+        for w in to_close:
+            if not w.closed:
+                try:
+                    await w.close()
+                except Exception:
+                    logger.debug("Jack: close peer WebSocket failed", exc_info=True)
         if self._site is not None:
             await self._site.stop()
             self._site = None
@@ -289,7 +298,7 @@ class Jack:
         return self.register(fn)
 
     async def send(self, packet: object) -> None:
-        """经 PatchBay 转发一帧业务数据包（编码规则同前）。"""
+        """向当前所有已连接的 PatchBay **广播** 同一帧业务数据包（同一 ``seq``）。"""
         try:
             data = encode_application_packet(packet)
         except TypeError:
@@ -297,18 +306,30 @@ class Jack:
         except Exception:
             logger.exception("Jack %r: 无法编码数据包", self.listen_address)
             return
+        seq = next(self._seq)
+        frame = Frame(kind="send", payload=data, seq=seq)
+        raw = encode_frame(frame)
         async with self._ws_lock:
-            ws = self._ws
-            if ws is None or ws.closed:
-                logger.warning("Jack %r: send dropped (not connected)", self.listen_address)
-                emit_jack_listeners(self._listeners, "on_send_dropped", "not_connected")
-                return
-            seq = next(self._seq)
-            frame = Frame(kind="send", payload=data, seq=seq)
-            try:
-                await ws.send_bytes(encode_frame(frame))
-            except Exception:
-                logger.warning("Jack %r: send failed, packet dropped", self.listen_address, exc_info=True)
+            targets = [w for w in self._peers if not w.closed]
+        if not targets:
+            logger.warning("Jack %r: send dropped (no PatchBay connected)", self.listen_address)
+            emit_jack_listeners(self._listeners, "on_send_dropped", "not_connected")
+            return
+        results = await asyncio.gather(
+            *[t.send_bytes(raw) for t in targets],
+            return_exceptions=True,
+        )
+        failures = sum(1 for r in results if isinstance(r, BaseException))
+        if failures:
+            ex = next((r for r in results if isinstance(r, BaseException)), None)
+            logger.warning(
+                "Jack %r: broadcast send failures %s/%s to PatchBay peers",
+                self.listen_address,
+                failures,
+                len(targets),
+                exc_info=ex if isinstance(ex, Exception) else None,
+            )
+            if failures == len(targets):
                 emit_jack_listeners(self._listeners, "on_send_failed")
 
     def send_sync(self, packet: object) -> None:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 
 class PatchBayListener:
     """可被子类扩展：按需覆盖回调；未覆盖的方法不执行任何操作。
@@ -12,6 +14,9 @@ class PatchBayListener:
 
     def on_listen_stopping(self) -> None:
         """即将停止监听并清理资源。"""
+
+    def on_jacks_dial_plan(self, jacks: Sequence[tuple[str, str]]) -> None:
+        """已从配置加载：将按 ``(name, address)`` 主动连接各 Jack 的监听地址。"""
 
     def on_jack_connected(self, jack_name: str, remote: str | None) -> None:
         """某 Jack WebSocket 握手成功并登记。"""
