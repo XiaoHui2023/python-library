@@ -14,7 +14,10 @@ class Frame(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     kind: FrameKind = Field(description="帧类型：握手、发送、投递、确认或错误")
-    jack: str | None = Field(default=None, description="Jack 名称，用于 hello")
+    address: str | None = Field(
+        default=None,
+        description="hello：与 PatchBay 配置中 jacks 条目的地址一致",
+    )
     payload: bytes | None = Field(default=None, description="业务数据包或错误信息")
     seq: int | None = Field(default=None, description="可选序号，用于 send/ack 配对")
 

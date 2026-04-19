@@ -16,8 +16,10 @@
 
 | 字段 | 说明 |
 |---|---|
-| `name` | 名称 |
-| `address` | 通讯地址 `host:port` |
+| `name` | 名称（`wires` 里用名字引用，便于配置复用） |
+| `address` | 该机 Jack 握手时上报的地址 `host:port`，须在列表内唯一 |
+
+业务侧 ``Jack`` 只认 **地址**（与这里对应条目的 `address` 一致）；**不必**在代码里写 `name`。
 
 ### `wires`
 

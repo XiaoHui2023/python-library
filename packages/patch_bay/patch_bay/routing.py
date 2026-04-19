@@ -7,21 +7,21 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 
 class JackEntry(BaseModel):
-    """配置里声明的一个 Jack：名称与对外地址。"""
+    """配置里声明的一个 Jack：``name`` 供连线复用；``address`` 须与该机 Jack 握手时上报的一致。"""
 
     model_config = ConfigDict(extra="forbid")
 
-    name: str = Field(description="Jack 全局唯一名称")
-    address: str = Field(description="该 Jack 对外可见地址，形如 host:port（拓扑展示等）")
+    name: str = Field(description="全局唯一名称，供 wires 引用")
+    address: str = Field(description="该机 hello 中的地址，形如 host:port；在 jacks 中唯一")
 
 
 class Wire(BaseModel):
-    """有向连线：源 Jack → 目标 Jack，命中规则表达式时才转发。"""
+    """有向连线：源 name → 目标 name，命中规则表达式时才转发。"""
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
-    from_jack: str = Field(alias="from", description="源 Jack 名称")
-    to_jack: str = Field(alias="to", description="目标 Jack 名称")
+    from_jack: str = Field(alias="from", description="源 Jack 的 name")
+    to_jack: str = Field(alias="to", description="目标 Jack 的 name")
     rule: str = Field(description="规则 id，对应 PatchBayConfig.rules 中的表达式")
 
 
@@ -30,7 +30,7 @@ class PatchBayConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    jacks: list[JackEntry] = Field(description="Jack 清单（名称与 ip:port）")
+    jacks: list[JackEntry] = Field(description="Jack 清单（name + address）")
     wires: list[Wire] = Field(description="连线及每条线绑定的规则 id")
     rules: dict[str, str] = Field(
         default_factory=dict,
@@ -63,11 +63,17 @@ class PatchBayConfig(BaseModel):
 
     @model_validator(mode="after")
     def _wires_and_rules_consistent(self) -> PatchBayConfig:
-        jack_names = {j.name for j in self.jacks}
+        names = [j.name for j in self.jacks]
+        if len(set(names)) != len(names):
+            raise ValueError("jacks 中 name 必须唯一")
+        addrs = [j.address for j in self.jacks]
+        if len(set(addrs)) != len(addrs):
+            raise ValueError("jacks 中 address 必须唯一")
+        name_set = set(names)
         for w in self.wires:
-            if w.from_jack not in jack_names:
+            if w.from_jack not in name_set:
                 raise ValueError(f"连线引用未知 Jack（from）: {w.from_jack!r}")
-            if w.to_jack not in jack_names:
+            if w.to_jack not in name_set:
                 raise ValueError(f"连线引用未知 Jack（to）: {w.to_jack!r}")
             if w.rule not in self.rules:
                 raise ValueError(f"连线引用未知规则 id: {w.rule!r}")
@@ -95,7 +101,7 @@ class ResolvedWire:
 
 
 class RoutingTable:
-    """按源 Jack 索引连线，转发前对每条候选线按数据包求值。"""
+    """按源 Jack 名称索引连线，转发前对每条候选线按数据包求值。"""
 
     __slots__ = ("_by_from_jack",)
 

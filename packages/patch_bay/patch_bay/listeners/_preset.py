@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
+import re
 from typing import Any
 
 try:
@@ -25,11 +27,57 @@ def _esc(s: object) -> str:
     return _escape_markup(str(s))
 
 
-def _bytes_hint(b: bytes) -> str:
-    n = len(b)
-    if n == 0:
-        return "空"
-    return f"{n} 字节"
+def _single_line_for_log(s: str) -> str:
+    return re.sub(r"[\r\n]+", " ↵ ", s).strip()
+
+
+def _is_mostly_printable_text(s: str) -> bool:
+    if "\x00" in s:
+        return False
+    if not s:
+        return True
+    ok = sum(1 for c in s if c.isprintable() or c in "\n\r\t")
+    return ok / len(s) >= 0.88
+
+
+def _payload_preview(
+    b: bytes,
+    *,
+    max_chars: int = 320,
+    max_hex_bytes: int = 56,
+) -> str:
+    """可读地摘要 payload：优先 JSON → UTF-8 文本 → 十六进制。"""
+    if not b:
+        return "（空）"
+    # JSON（UTF-8）
+    try:
+        text = b.decode("utf-8")
+        t = text.strip()
+        if t and t[0] in "[{":
+            obj = json.loads(text)
+            out = json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+            out = _single_line_for_log(out)
+            if len(out) > max_chars:
+                return out[: max_chars - 1] + "…"
+            return out
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        pass
+    # UTF-8 文本
+    try:
+        text = b.decode("utf-8")
+        if _is_mostly_printable_text(text):
+            out = _single_line_for_log(text)
+            if len(out) > max_chars:
+                return out[: max_chars - 1] + "…"
+            return out
+    except UnicodeDecodeError:
+        pass
+    # 十六进制（不强调总字节数，除非被截断）
+    show = b[:max_hex_bytes]
+    hx = " ".join(f"{x:02x}" for x in show)
+    if len(b) > max_hex_bytes:
+        return f"[二进制] {hx} …（余 {len(b) - max_hex_bytes} 字节）"
+    return f"[二进制] {hx}"
 
 
 def _notify(log: logging.Logger, plain: str, *, rich: str | None = None) -> None:

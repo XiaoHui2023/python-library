@@ -131,16 +131,28 @@ class PatchBay:
                 await ws.send_bytes(encode_frame(error_frame("invalid hello frame")))
                 await ws.close()
                 return
-            if hello.kind != "hello" or hello.jack is None:
-                await ws.send_bytes(encode_frame(error_frame("first frame must be hello with jack")))
+            if hello.kind != "hello" or not (hello.address and str(hello.address).strip()):
+                await ws.send_bytes(encode_frame(error_frame("first frame must be hello with address")))
                 await ws.close()
                 return
-            jack_name = hello.jack
+            addr = str(hello.address).strip()
             with pb._route_lock:
-                if jack_name in pb._clients:
+                name_for_addr: str | None = None
+                for j in pb._config.jacks:
+                    if j.address == addr:
+                        name_for_addr = j.name
+                        break
+                if name_for_addr is None:
+                    await ws.send_bytes(
+                        encode_frame(error_frame("unknown address (not in config jacks)"))
+                    )
+                    await ws.close()
+                    return
+                if name_for_addr in pb._clients:
                     await ws.send_bytes(encode_frame(error_frame("jack name already connected")))
                     await ws.close()
                     return
+                jack_name = name_for_addr
                 pb._clients[jack_name] = ws
                 peer = request.remote or ""
                 pb._client_remote[jack_name] = peer

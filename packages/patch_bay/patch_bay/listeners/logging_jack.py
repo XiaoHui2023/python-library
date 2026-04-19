@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 
 from .jack_listener import JackListener
-from ._preset import _RICH, _bytes_hint, _esc, _notify
+from ._preset import _RICH, _esc, _notify, _payload_preview
 
 
 def _drop_reason_zh(reason: str) -> str:
@@ -34,9 +34,9 @@ class LoggingJackListener(JackListener):
         _notify(self._log, plain, rich=rich if _RICH else None)
 
     def on_incoming_deliver(self, payload: bytes) -> None:
-        sz = _bytes_hint(payload)
-        plain = f"收到对方发来的数据（{sz}）。"
-        rich = f"[cyan]📨[/] 收到对方数据 [dim]（{sz}）[/]。"
+        body = _payload_preview(payload)
+        plain = f"收到对方数据：{body}"
+        rich = f"[cyan]📨[/] {_esc(body)}"
         _notify(self._log, plain, rich=rich if _RICH else None)
 
     def on_send_dropped(self, reason: str) -> None:
@@ -55,7 +55,7 @@ class LoggingJackListener(JackListener):
         rich = f"[red]⛔[/] 交换机： [red]{_esc(message)}[/]"
         _notify(self._log, plain, rich=rich if _RICH else None)
 
-    def on_ack(self, seq: int) -> None:
-        plain = f"刚才发的数据交换机已确认（序号 {seq}）。"
-        rich = f"[dim]✅[/] 已确认  [yellow]#{seq}[/]"
+    def on_ack(self, _seq: int) -> None:
+        plain = "上一包交换机已确认。"
+        rich = "[dim]✅[/] 已确认"
         _notify(self._log, plain, rich=rich if _RICH else None)

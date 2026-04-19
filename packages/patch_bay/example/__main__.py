@@ -20,7 +20,7 @@ async def demo() -> None:
     """在同一进程内用 aiohttp TestServer 拉起 PatchBay，两个 Jack 经路由互发一帧数据。
 
     实际部署时：PatchBay 通常单独进程 ``await PatchBay(config).serve()``，
-    各业务进程各自 ``Jack(port)`` + ``await jack.start()``（单进程一个 Jack 时不必传 ``wire_id``）。
+    各业务进程 ``Jack(port, address=…)`` + ``await jack.start()``；``address`` 与 PatchBay 配置里该机条目一致（也可用环境变量 ``PATCH_BAY_ADDRESS``）。
     """
     from aiohttp.test_utils import TestServer
 
@@ -31,8 +31,8 @@ async def demo() -> None:
     cfg = {
         "listen": 0,
         "jacks": [
-            {"name": "a", "address": "127.0.0.1:0"},
-            {"name": "b", "address": "127.0.0.1:0"},
+            {"name": "a", "address": "127.0.0.1:7001"},
+            {"name": "b", "address": "127.0.0.1:7002"},
         ],
         "wires": [{"from": "a", "to": "b", "rule": "pass"}],
         "rules": {"pass": "True"},
@@ -43,14 +43,14 @@ async def demo() -> None:
         loop = asyncio.get_running_loop()
         got: asyncio.Future[bytes] = loop.create_future()
 
-        jack_b = Jack(port, wire_id="b", listeners=[LoggingJackListener()])
+        jack_b = Jack(port, address="127.0.0.1:7002", listeners=[LoggingJackListener()])
 
         @jack_b
         async def _(payload: bytes) -> None:
             if not got.done():
                 got.set_result(payload)
 
-        jack_a = Jack(port, wire_id="a", listeners=[LoggingJackListener()])
+        jack_a = Jack(port, address="127.0.0.1:7001", listeners=[LoggingJackListener()])
         await jack_a.start()
         await jack_b.start()
         await asyncio.sleep(0.2)
