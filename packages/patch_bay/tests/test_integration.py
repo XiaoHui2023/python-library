@@ -27,17 +27,17 @@ class TestIntegration(unittest.IsolatedAsyncioTestCase):
         pb = PatchBay(cfg)
         app = pb.build_application()
         async with TestServer(app) as server:
-            ws_url = server.make_url("/").with_scheme("ws")
+            port = server.port
             got: asyncio.Future[bytes] = asyncio.get_running_loop().create_future()
 
-            jack_b = Jack(name="b", server=str(ws_url))
+            jack_b = Jack(port, wire_id="b")
 
             @jack_b
             async def _(payload: bytes) -> None:
                 if not got.done():
                     got.set_result(payload)
 
-            jack_a = Jack(name="a", server=str(ws_url))
+            jack_a = Jack(port, wire_id="a")
             await jack_a.start()
             await jack_b.start()
             await asyncio.sleep(0.2)
@@ -62,17 +62,17 @@ class TestIntegration(unittest.IsolatedAsyncioTestCase):
         pb = PatchBay(cfg)
         app = pb.build_application()
         async with TestServer(app) as server:
-            ws_url = server.make_url("/").with_scheme("ws")
+            port = server.port
             got: asyncio.Future[bytes] = asyncio.get_running_loop().create_future()
 
-            jack_b = Jack(name="b", server=str(ws_url))
+            jack_b = Jack(port, wire_id="b")
 
             @jack_b
             async def _recv(_p: bytes) -> None:
                 if not got.done():
                     got.set_result(_p)
 
-            jack_a = Jack(name="a", server=str(ws_url))
+            jack_a = Jack(port, wire_id="a")
             await jack_a.start()
             await jack_b.start()
             await asyncio.sleep(0.2)

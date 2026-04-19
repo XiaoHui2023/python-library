@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "python-library-patch-bay"
-version = "0.1.0"
+version = "0.1.1"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -13,6 +13,9 @@ dependencies = [
     "aiohttp>=3.9,<4",
     "msgpack>=1,<2",
 ]
+
+[project.optional-dependencies]
+rich = ["rich>=13,<14"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["patch_bay"]

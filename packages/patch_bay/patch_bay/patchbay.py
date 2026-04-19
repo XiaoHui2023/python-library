@@ -10,7 +10,7 @@ import aiohttp
 from aiohttp import web
 from express_evaluator import Evaluator
 
-from .listener import PatchBayListener, emit_listeners
+from .listeners import PatchBayListener, emit_listeners
 from .protocol import Frame, decode_frame, encode_frame, error_frame
 from .routing import PatchBayConfig, RoutingTable, patch_bay_config_from_dict
 from .rule_eval import rule_allows
@@ -38,7 +38,7 @@ def _effective_listen_host_port(site: web.BaseSite, host: str, port: int) -> tup
 
 
 class PatchBay:
-    """中央路由：仅提供 WebSocket 转发；可选 ``PatchBayListener`` 列表接收内部事件。"""
+    """中央交换：按配置在 Jack 之间转发字节流（Jack 互不直连）；可选 ``PatchBayListener`` 接收内部事件。"""
 
     def __init__(
         self,

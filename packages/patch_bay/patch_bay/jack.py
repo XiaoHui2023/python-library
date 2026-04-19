@@ -4,42 +4,67 @@ import asyncio
 import inspect
 import itertools
 import logging
-from collections.abc import Awaitable, Callable
+import os
+from collections.abc import Awaitable, Callable, Sequence
 
 import aiohttp
 from aiohttp import ClientWebSocketResponse
 
+from .listeners import JackListener, emit_jack_listeners
 from .protocol import Frame, decode_frame, encode_frame
 from .transport.websocket import websocket_url
 
 logger = logging.getLogger(__name__)
 
+# 与 PatchBay 同机挂线时使用回环地址（不可将 0.0.0.0 作为对端地址）。
+JACK_LOCAL_CONNECT_HOST = "127.0.0.1"
+
+# 与 PatchBay 配置里 ``jacks[].name``、hello 帧里的标识一致；单进程多实例（如测试）时传不同 ``wire_id``。
+DEFAULT_WIRE_ID = "jack"
+ENV_WIRE_ID = "PATCH_BAY_JACK_ID"
+
 PacketHandler = Callable[[bytes], Awaitable[None] | None]
 
 
 class Jack:
-    """业务端点：连接 PatchBay，发送数据包并接收触发回调（无通道，由载荷自行解析）。
+    """业务侧接入点：像港口一样只与 PatchBay 这条「总线」打交道，**不与其他 Jack 直连**；往来字节由 PatchBay 按配置转发。
+    构造为 ``Jack(port, ...)``；与交换机里该端点的标识见 ``wire_id``（默认与 ``PATCH_BAY_JACK_ID`` / ``jack`` 对齐）。
+    收发数据包并接收经路由投递的回调（无通道，由载荷自行解析）。
 
-    **断线重连**：``start()`` 后在后台循环连接；首次连不上、或运行中断线，都会按指数退避等待后自动重试（约 0.5s 起，上限 30s），直至 ``aclose()``。
-    PatchBay 作为服务端只负责接受连接，本身不做「重连」；各 Jack 进程自行维护到 PatchBay 的长连接。
+    ``port`` 为 PatchBay 的挂入端口；同机时目标主机固定为 ``127.0.0.1``（PatchBay 监听 ``0.0.0.0``）。
+    实现上由本进程向该端口建立接入链路，以便 PatchBay 单进程集中维护拓扑与转发（不必用「客户端 / 服务端」来理解业务关系）。
+
+    **断线重连**：``start()`` 后在后台循环尝试挂入；首次失败或运行中断线，按指数退避重试（约 0.5s 起，上限 30s），直至 ``aclose()``。
+    PatchBay 不负责代 Jack 重连；各 Jack 自行维护到 PatchBay 的链路。
 
     启动后需保持事件循环运行；常见写法为 ``await jack.start()`` 之后 ``await asyncio.Event().wait()`` 占位，
     在 ``asyncio.run(...)`` 外层捕获 ``KeyboardInterrupt`` 并在 ``finally`` 里 ``await jack.aclose()``，或使用
     ``await jack.join()`` 与别处调用的 ``aclose()`` 配对。使用 ``@jack`` 或 ``jack(函数)`` 注册收包回调（同 ``register``）。
     收到数据时所有已注册回调并行执行（异步 ``await``、同步走线程池）。
     同步回调在线程池中运行，勿在其中直接操作 asyncio 对象，回主循环请用 ``call_soon_threadsafe``。
+    可选 ``listeners``：``JackListener`` 子类列表，用于链路生命周期与投递、发送等可观测事件（同步回调）。
+
+    ``wire_id`` 与配置里该端点的 ``name`` 一致；省略时先用环境变量 ``PATCH_BAY_JACK_ID``，再默认 ``jack``。
+    同一进程挂多个 ``Jack``（如集成测试）时需分别传入不同 ``wire_id``。
     """
 
     def __init__(
         self,
-        name: str,
-        server: str,
+        port: int,
         *,
+        wire_id: str | None = None,
         ws_path: str = "/ws",
         session: aiohttp.ClientSession | None = None,
+        listeners: Sequence[JackListener] | None = None,
     ) -> None:
-        self.name = name
-        self._server = websocket_url(server, ws_path)
+        if not (1 <= port <= 65535):
+            raise ValueError(f"port must be 1..65535, got {port}")
+        self._wire_id = (
+            wire_id
+            if wire_id is not None
+            else os.environ.get(ENV_WIRE_ID, DEFAULT_WIRE_ID)
+        )
+        self._server = websocket_url(f"ws://{JACK_LOCAL_CONNECT_HOST}:{port}", ws_path)
         self._owns_session = session is None
         self._session = session or aiohttp.ClientSession()
         self._ws: ClientWebSocketResponse | None = None
@@ -50,6 +75,7 @@ class Jack:
         self._stopped = asyncio.Event()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._handlers: list[PacketHandler] = []
+        self._listeners: list[JackListener] = list(listeners or ())
 
     def register(self, fn: PacketHandler) -> PacketHandler:
         """显式注册收包回调；与 ``jack(fn)`` / ``@jack`` 等价。"""
@@ -61,20 +87,21 @@ class Jack:
         return self.register(fn)
 
     async def start(self) -> None:
-        """启动后台连接与重连循环；不阻塞等待首次连接成功。"""
+        """启动后台挂入与重试循环；不阻塞等待首次挂入成功。"""
         if self._run_task is not None:
             return
         self._closed.clear()
         self._stopped.clear()
         self._loop = asyncio.get_running_loop()
-        self._run_task = asyncio.create_task(self._connection_loop(), name=f"jack:{self.name}")
+        self._run_task = asyncio.create_task(self._connection_loop(), name=f"jack:{self._wire_id}")
 
     async def join(self) -> None:
         """阻塞直至 `aclose()` 完成，便于应用入口在 `start()` 后保持进程存活（配合 Ctrl+C 在协程外取消或捕获 KeyboardInterrupt）。"""
         await self._stopped.wait()
 
     async def aclose(self) -> None:
-        """停止重连循环并关闭连接。"""
+        """停止重试循环并关闭与 PatchBay 的链路。"""
+        emit_jack_listeners(self._listeners, "on_stopping")
         self._closed.set()
         if self._run_task is not None:
             self._run_task.cancel()
@@ -96,14 +123,16 @@ class Jack:
         async with self._ws_lock:
             ws = self._ws
             if ws is None or ws.closed:
-                logger.warning("Jack %r: send dropped (not connected)", self.name)
+                logger.warning("Jack %r: send dropped (not connected)", self._wire_id)
+                emit_jack_listeners(self._listeners, "on_send_dropped", "not_connected")
                 return
             seq = next(self._seq)
             frame = Frame(kind="send", payload=data, seq=seq)
             try:
                 await ws.send_bytes(encode_frame(frame))
             except Exception:
-                logger.warning("Jack %r: send failed, packet dropped", self.name, exc_info=True)
+                logger.warning("Jack %r: send failed, packet dropped", self._wire_id, exc_info=True)
+                emit_jack_listeners(self._listeners, "on_send_failed")
 
     def send_sync(self, data: bytes) -> None:
         """同步发送；需在已有事件循环的上下文中使用。"""
@@ -122,12 +151,16 @@ class Jack:
                     await self._handshake(ws)
                     async with self._ws_lock:
                         self._ws = ws
+                    emit_jack_listeners(self._listeners, "on_link_up")
                     backoff = 0.5
-                    await self._recv_loop(ws)
+                    try:
+                        await self._recv_loop(ws)
+                    finally:
+                        emit_jack_listeners(self._listeners, "on_link_down")
             except asyncio.CancelledError:
                 raise
             except Exception:
-                logger.exception("Jack %r connection error, reconnecting", self.name)
+                logger.exception("Jack %r connection error, reconnecting", self._wire_id)
             finally:
                 async with self._ws_lock:
                     self._ws = None
@@ -136,7 +169,7 @@ class Jack:
             delay = min(backoff, max_backoff)
             logger.warning(
                 "Jack %r disconnected or failed; retry in %.1fs",
-                self.name,
+                self._wire_id,
                 delay,
             )
             try:
@@ -147,7 +180,7 @@ class Jack:
             backoff = min(backoff * 2, max_backoff)
 
     async def _handshake(self, ws: ClientWebSocketResponse) -> None:
-        hello = Frame(kind="hello", jack=self.name)
+        hello = Frame(kind="hello", jack=self._wire_id)
         await ws.send_bytes(encode_frame(hello))
 
     async def _recv_loop(self, ws: ClientWebSocketResponse) -> None:
@@ -156,7 +189,7 @@ class Jack:
                 try:
                     frame = decode_frame(msg.data)
                 except Exception:
-                    logger.exception("Jack %r invalid frame", self.name)
+                    logger.exception("Jack %r invalid frame", self._wire_id)
                     continue
                 await self._dispatch_frame(frame)
             elif msg.type == aiohttp.WSMsgType.ERROR:
@@ -164,15 +197,15 @@ class Jack:
 
     async def _dispatch_frame(self, frame: Frame) -> None:
         if frame.kind == "deliver" and frame.payload is not None:
+            emit_jack_listeners(self._listeners, "on_incoming_deliver", frame.payload)
             await self._emit_payload_parallel(frame.payload)
         elif frame.kind == "error" and frame.payload is not None:
-            logger.error(
-                "PatchBay error for %s: %s",
-                self.name,
-                frame.payload.decode("utf-8", errors="replace"),
-            )
+            msg = frame.payload.decode("utf-8", errors="replace")
+            logger.error("PatchBay error for %s: %s", self._wire_id, msg)
+            emit_jack_listeners(self._listeners, "on_patchbay_error", msg)
         elif frame.kind == "ack" and frame.seq is not None:
-            logger.debug("Jack %s ack seq=%s", self.name, frame.seq)
+            emit_jack_listeners(self._listeners, "on_ack", frame.seq)
+            logger.debug("Jack %s ack seq=%s", self._wire_id, frame.seq)
 
     async def _emit_payload_parallel(self, payload: bytes) -> None:
         if not self._handlers:
@@ -190,7 +223,7 @@ class Jack:
             if isinstance(res, BaseException):
                 logger.error(
                     "Jack %r handler[%s] failed",
-                    self.name,
+                    self._wire_id,
                     i,
                     exc_info=(type(res), res, res.__traceback__),
                 )
