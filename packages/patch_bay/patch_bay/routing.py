@@ -22,7 +22,10 @@ class Wire(BaseModel):
 
     from_jack: str = Field(alias="from", description="源 Jack 的 name")
     to_jack: str = Field(alias="to", description="目标 Jack 的 name")
-    rule: str = Field(description="规则 id，对应 PatchBayConfig.rules 中的表达式")
+    rule: str | None = Field(
+        default=None,
+        description="规则 id，对应 PatchBayConfig.rules；省略则恒为真、直接通行",
+    )
 
 
 class PatchBayConfig(BaseModel):
@@ -31,7 +34,7 @@ class PatchBayConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     jacks: list[JackEntry] = Field(description="Jack 清单（name + address）")
-    wires: list[Wire] = Field(description="连线及每条线绑定的规则 id")
+    wires: list[Wire] = Field(description="连线；rule 可省略表示恒为真")
     rules: dict[str, str] = Field(
         default_factory=dict,
         description="rule_id → 条件表达式（express_evaluator）",
@@ -75,6 +78,8 @@ class PatchBayConfig(BaseModel):
                 raise ValueError(f"连线引用未知 Jack（from）: {w.from_jack!r}")
             if w.to_jack not in name_set:
                 raise ValueError(f"连线引用未知 Jack（to）: {w.to_jack!r}")
+            if w.rule is None:
+                continue
             if w.rule not in self.rules:
                 raise ValueError(f"连线引用未知规则 id: {w.rule!r}")
             expr = self.rules[w.rule].strip()
@@ -115,7 +120,10 @@ class RoutingTable:
     def from_config(cls, config: PatchBayConfig) -> RoutingTable:
         resolved: list[ResolvedWire] = []
         for w in config.wires:
-            expr = config.rules[w.rule].strip()
+            if w.rule is None:
+                expr = "True"
+            else:
+                expr = config.rules[w.rule].strip()
             resolved.append(
                 ResolvedWire(
                     from_jack=w.from_jack,
