@@ -3,17 +3,39 @@ from __future__ import annotations
 import logging
 
 from .patch_bay_listener import PatchBayListener
-from ._preset import _RICH, _esc, _notify, _payload_preview
+from ._preset import (
+    ListenerLogLevel,
+    _RICH,
+    _esc,
+    _notify,
+    _payload_for_level,
+)
 
 
 class LoggingPatchBayListener(PatchBayListener):
-    """事件用人话单行输出：装了 Rich 就用 Rich，否则用 logging。"""
+    """事件用人话单行输出：装了 Rich 就用 Rich，否则用 logging。
 
-    def __init__(self, *, logger: logging.Logger | None = None, label: str = "PatchBay") -> None:
+    ``level``：``info`` 只打拓扑与转发结果等常用步骤，数据包摘要；
+    ``debug`` 额外打印每条入站 send、路由跳过等，且数据包尽量完整。
+    """
+
+    def __init__(
+        self,
+        *,
+        logger: logging.Logger | None = None,
+        label: str = "PatchBay",
+        level: ListenerLogLevel = "info",
+    ) -> None:
         self._log = logger or logging.getLogger("patch_bay.events.patchbay")
         self._label = label
+        self._level: ListenerLogLevel = level
+
+    def _pv(self, payload: bytes) -> str:
+        return _payload_for_level(payload, self._level)
 
     def on_listen_started(self, host: str, port: int) -> None:
+        if self._level != "debug":
+            return
         plain = f"{self._label}已在 {host}:{port} 开始监听，Jack 可以接上。"
         rich = (
             f"[bold cyan]📡[/] [bold]{_esc(self._label)}[/] 已在 "
@@ -57,9 +79,12 @@ class LoggingPatchBayListener(PatchBayListener):
     def on_incoming_send(
         self, from_jack: str, payload: bytes, _seq: int | None
     ) -> None:
-        body = _payload_preview(payload)
-        plain = f"收到「{from_jack}」：{body}"
-        rich = f"[blue]📥[/] [bold]{_esc(from_jack)}[/] → {_esc(body)}"
+        if self._level != "debug":
+            return
+        body = self._pv(payload)
+        seq_s = f" seq={_seq}" if _seq is not None else ""
+        plain = f"（调试）收到「{from_jack}」入站 send{seq_s}：{body}"
+        rich = f"[dim]📥[/] [magenta]（调试）[/] [bold]{_esc(from_jack)}[/]{_esc(seq_s)} → {_esc(body)}"
         _notify(self._log, plain, rich=rich if _RICH else None)
 
     def on_route_skipped(
@@ -70,17 +95,19 @@ class LoggingPatchBayListener(PatchBayListener):
         *,
         reason: str,
     ) -> None:
-        body = _payload_preview(payload)
+        if self._level != "debug":
+            return
+        body = self._pv(payload)
         reason_zh = "对端没接上" if reason == "offline" else ("规则没过" if reason == "rule" else reason)
-        plain = f"没把「{from_jack}」→「{to_jack}」（{reason_zh}）：{body}"
+        plain = f"（调试）未转发「{from_jack}」→「{to_jack}」（{reason_zh}）：{body}"
         rich = (
-            f"[yellow]⏭️[/] [bold]{_esc(from_jack)}[/]→[bold]{_esc(to_jack)}[/] "
+            f"[dim]⏭️[/] [magenta]（调试）[/] [bold]{_esc(from_jack)}[/]→[bold]{_esc(to_jack)}[/] "
             f"[magenta]{_esc(reason_zh)}[/]  {_esc(body)}"
         )
         _notify(self._log, plain, rich=rich if _RICH else None)
 
     def on_packet_delivered(self, from_jack: str, to_jack: str, payload: bytes) -> None:
-        body = _payload_preview(payload)
+        body = self._pv(payload)
         plain = f"已转发「{from_jack}」→「{to_jack}」：{body}"
         rich = f"[green]📤[/] [bold]{_esc(from_jack)}[/] → [bold]{_esc(to_jack)}[/]  {_esc(body)}"
         _notify(self._log, plain, rich=rich if _RICH else None)
@@ -92,7 +119,7 @@ class LoggingPatchBayListener(PatchBayListener):
         payload: bytes,
         error: BaseException | None,
     ) -> None:
-        body = _payload_preview(payload)
+        body = self._pv(payload)
         err = str(error) if error else "未知原因"
         plain = f"发给「{to_jack}」失败（从「{from_jack}」）：{body} 原因：{err}"
         rich = (

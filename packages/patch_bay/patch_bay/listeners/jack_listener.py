@@ -7,6 +7,9 @@ class JackListener:
     回调均为同步函数；若在回调中做耗时或异步工作，请自行 ``asyncio.create_task`` 或投递到线程池。
     """
 
+    def on_listen_started(self, listen_address: str) -> None:
+        """已在 ``listen_address`` 上开始监听；**无需**已有 PatchBay 连接。"""
+
     def on_link_up(self) -> None:
         """已与 PatchBay 建立链路并完成握手，可收发。"""
 

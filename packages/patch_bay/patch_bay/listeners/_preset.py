@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any
+from typing import Any, Literal
 
 import msgpack
 
@@ -90,6 +90,41 @@ def _payload_preview(
     if len(b) > max_hex_bytes:
         return f"[二进制] {hx} …（余 {len(b) - max_hex_bytes} 字节）"
     return f"[二进制] {hx}"
+
+
+def _payload_preview_full(b: bytes) -> str:
+    """调试：尽量完整展示 payload（结构化可展开；纯二进制则全长十六进制）。"""
+    if not b:
+        return "（空）"
+    try:
+        text = b.decode("utf-8")
+        t = text.strip()
+        if t and t[0] in "[{":
+            obj = json.loads(text)
+            return json.dumps(obj, ensure_ascii=False, indent=2)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        pass
+    try:
+        obj = msgpack.unpackb(b, raw=False, strict_map_key=False)
+        return json.dumps(obj, ensure_ascii=False, default=str, indent=2)
+    except Exception:
+        pass
+    try:
+        text = b.decode("utf-8")
+        if _is_mostly_printable_text(text):
+            return text
+    except UnicodeDecodeError:
+        pass
+    return "[二进制] " + " ".join(f"{x:02x}" for x in b)
+
+
+ListenerLogLevel = Literal["info", "debug"]
+
+
+def _payload_for_level(b: bytes, level: ListenerLogLevel) -> str:
+    if level == "debug":
+        return _payload_preview_full(b)
+    return _payload_preview(b)
 
 
 def _notify(log: logging.Logger, plain: str, *, rich: str | None = None) -> None:

@@ -248,6 +248,7 @@ class Jack:
         eff_h, eff_p = _effective_listen_host_port(self._site, self._bind_host, self._bind_port)
         self._eff_host = eff_h
         self._eff_port = eff_p
+        emit_jack_listeners(self._listeners, "on_listen_started", self.listen_address)
 
     async def join(self) -> None:
         """阻塞直至 `aclose()` 完成。"""

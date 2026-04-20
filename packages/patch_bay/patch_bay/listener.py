@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .listeners import (
     JackListener,
+    ListenerLogLevel,
     LoggingJackListener,
     LoggingPatchBayListener,
     PatchBayListener,
@@ -13,6 +14,7 @@ from .listeners import (
 
 __all__ = [
     "JackListener",
+    "ListenerLogLevel",
     "LoggingJackListener",
     "LoggingPatchBayListener",
     "PatchBayListener",

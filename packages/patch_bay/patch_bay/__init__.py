@@ -1,6 +1,7 @@
 from .jack import Jack
 from .listeners import (
     JackListener,
+    ListenerLogLevel,
     LoggingJackListener,
     LoggingPatchBayListener,
     PatchBayListener,
@@ -11,6 +12,7 @@ from .routing import PatchBayConfig
 __all__ = [
     "Jack",
     "JackListener",
+    "ListenerLogLevel",
     "LoggingJackListener",
     "LoggingPatchBayListener",
     "PatchBay",
