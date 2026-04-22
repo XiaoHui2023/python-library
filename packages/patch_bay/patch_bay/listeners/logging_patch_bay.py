@@ -94,15 +94,24 @@ class LoggingPatchBayListener(PatchBayListener):
         payload: bytes,
         *,
         reason: str,
+        detail: str | None = None,
     ) -> None:
         if self._level != "debug":
             return
         body = self._pv(payload)
-        reason_zh = "对端没接上" if reason == "offline" else ("规则没过" if reason == "rule" else reason)
-        plain = f"（调试）未转发「{from_jack}」→「{to_jack}」（{reason_zh}）：{body}"
+        if reason == "offline":
+            reason_zh = "对端没接上"
+        elif reason == "rule":
+            reason_zh = "规则没过"
+        elif reason == "patch":
+            reason_zh = "补丁失败"
+        else:
+            reason_zh = reason
+        tail = f"（{detail}）" if detail else ""
+        plain = f"（调试）未转发「{from_jack}」→「{to_jack}」（{reason_zh}）{tail}：{body}"
         rich = (
             f"[dim]⏭️[/] [magenta]（调试）[/] [bold]{_esc(from_jack)}[/]→[bold]{_esc(to_jack)}[/] "
-            f"[magenta]{_esc(reason_zh)}[/]  {_esc(body)}"
+            f"[magenta]{_esc(reason_zh)}[/]{_esc(tail)}  {_esc(body)}"
         )
         _notify(self._log, plain, rich=rich if _RICH else None)
 

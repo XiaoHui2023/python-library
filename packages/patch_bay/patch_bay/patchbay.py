@@ -15,6 +15,7 @@ from aiohttp.client_exceptions import ClientConnectorError
 from express_evaluator import Evaluator
 
 from .listeners import PatchBayListener, emit_listeners
+from .packet_patch import apply_wire_patches
 from .peer import ws_url_for_jack_listen
 from .protocol import Frame, decode_frame, encode_frame
 from .routing import PatchBayConfig, RoutingTable, patch_bay_config_from_dict
@@ -229,7 +230,29 @@ class PatchBay:
                     reason="offline",
                 )
                 continue
-            deliver = Frame(kind="deliver", payload=payload)
+            out_payload = payload
+            if w.patch_steps:
+                patched, err = apply_wire_patches(payload, w.patch_steps)
+                if patched is None:
+                    msg = err or "patch failed"
+                    logger.error(
+                        "patch dropped packet on wire %s → %s: %s",
+                        from_jack,
+                        w.to_jack,
+                        msg,
+                    )
+                    emit_listeners(
+                        self._listeners,
+                        "on_route_skipped",
+                        from_jack,
+                        w.to_jack,
+                        payload,
+                        reason="patch",
+                        detail=msg,
+                    )
+                    continue
+                out_payload = patched
+            deliver = Frame(kind="deliver", payload=out_payload)
             try:
                 await target_ws.send_bytes(encode_frame(deliver))
                 emit_listeners(
@@ -237,7 +260,7 @@ class PatchBay:
                     "on_packet_delivered",
                     from_jack,
                     w.to_jack,
-                    payload,
+                    out_payload,
                 )
             except Exception as exc:
                 emit_listeners(
@@ -245,7 +268,7 @@ class PatchBay:
                     "on_deliver_failed",
                     from_jack,
                     w.to_jack,
-                    payload,
+                    out_payload,
                     exc,
                 )
                 logger.warning("deliver to %s failed", w.to_jack, exc_info=True)

@@ -36,8 +36,9 @@ class PatchBayListener:
         payload: bytes,
         *,
         reason: str,
+        detail: str | None = None,
     ) -> None:
-        """本条线未投递：``reason`` 为 ``rule``（规则未通过）或 ``offline``（对端未挂入）。"""
+        """本条线未投递：``reason`` 为 ``rule`` / ``offline`` / ``patch``；补丁失败（缺键、类型不一致等）时 ``detail`` 为原因。"""
 
     def on_packet_delivered(self, from_jack: str, to_jack: str, payload: bytes) -> None:
         """已成功向对方 Jack 发出 ``deliver`` 帧。"""

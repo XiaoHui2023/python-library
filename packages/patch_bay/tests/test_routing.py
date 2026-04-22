@@ -2,14 +2,10 @@ from __future__ import annotations
 
 import unittest
 
+from pydantic import ValidationError
+
 from patch_bay.patchbay import PatchBay
-from patch_bay.routing import (
-    JackEntry,
-    PatchBayConfig,
-    RoutingTable,
-    Wire,
-    patch_bay_config_from_dict,
-)
+from patch_bay.routing import RoutingTable, patch_bay_config_from_dict
 
 
 def _minimal_cfg(**overrides: object) -> dict:
@@ -101,6 +97,65 @@ class TestRouting(unittest.TestCase):
         self.assertEqual(cfg.jacks[0].name, "a")
         self.assertEqual(cfg.wires[0].from_jack, "a")
         self.assertEqual(cfg.wires[0].to_jack, "b")
+
+    def test_patchs_on_wire_resolved(self) -> None:
+        cfg = patch_bay_config_from_dict(
+            {
+                "jacks": [
+                    {"name": "a", "address": "h:1"},
+                    {"name": "b", "address": "h:2"},
+                ],
+                "patchs": [
+                    {"name": "p1", "patch": {"k": 1}},
+                    {"name": "p2", "patch": {"m": 2}},
+                ],
+                "wires": [
+                    {
+                        "from": "a",
+                        "to": "b",
+                        "patchs": ["p1", "p2"],
+                    },
+                ],
+                "rules": {},
+            }
+        )
+        rt = RoutingTable.from_config(cfg)
+        w = list(rt.iter_from_jack("a"))[0]
+        self.assertEqual(
+            w.patch_steps,
+            (("p1", {"k": 1}), ("p2", {"m": 2})),
+        )
+
+    def test_unknown_patch_on_wire_rejected(self) -> None:
+        with self.assertRaises(ValidationError):
+            patch_bay_config_from_dict(
+                {
+                    "jacks": [
+                        {"name": "a", "address": "h:1"},
+                        {"name": "b", "address": "h:2"},
+                    ],
+                    "patchs": [{"name": "p1", "patch": {"x": 1}}],
+                    "wires": [{"from": "a", "to": "b", "patchs": ["nosuch"]}],
+                    "rules": {},
+                }
+            )
+
+    def test_duplicate_patch_name_rejected(self) -> None:
+        with self.assertRaises(ValidationError):
+            patch_bay_config_from_dict(
+                {
+                    "jacks": [
+                        {"name": "a", "address": "h:1"},
+                        {"name": "b", "address": "h:2"},
+                    ],
+                    "patchs": [
+                        {"name": "same", "patch": {"x": 1}},
+                        {"name": "same", "patch": {"y": 2}},
+                    ],
+                    "wires": [{"from": "a", "to": "b"}],
+                    "rules": {},
+                }
+            )
 
 
 if __name__ == "__main__":

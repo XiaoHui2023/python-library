@@ -45,6 +45,8 @@ class Wire(BaseModel):
 
     同一 ``from_jack`` 可有多条 ``Wire``：按配置中的顺序依次尝试，每条线独立匹配规则并投递；
     对端未连上会单独产生 ``on_route_skipped(..., reason=offline)``，不影响其它线。
+    ``patchs`` 非空时：规则通过后按顺序套用补丁，再编码发出；缺键或目标值类型与当前值不一致则失败，
+    ``on_route_skipped(..., reason=patch)``。
     """
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
@@ -55,11 +57,60 @@ class Wire(BaseModel):
         default=None,
         description="规则 id，对应 PatchBayConfig.rules；省略则恒为真、直接通行",
     )
+    patchs: list[str] = Field(
+        default_factory=list,
+        description="要应用的补丁名列表（引用顶层 patchs），按顺序套用；空表示不改写载荷",
+    )
 
     @field_validator("from_jack", "to_jack", mode="before")
     @classmethod
     def _strip_jack_refs(cls, v: Any) -> str:
         return _strip_nonempty_str(v, field="jack ref")
+
+    @field_validator("patchs", mode="before")
+    @classmethod
+    def _coerce_patchs(cls, v: Any) -> list[str]:
+        if v is None:
+            return []
+        if not isinstance(v, list):
+            raise TypeError("patchs must be a list of patch names")
+        out: list[str] = []
+        for i, item in enumerate(v):
+            if not isinstance(item, str):
+                raise TypeError(f"patchs[{i}] must be str")
+            out.append(_strip_nonempty_str(item, field="patch name"))
+        return out
+
+
+class PatchEntry(BaseModel):
+    """具名载荷补丁：``patch`` 为顶层字段名到目标值的映射。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(description="补丁名，供 wires.patchs 引用")
+    patch: dict[str, Any] = Field(
+        description="顶层键 → 改写后的值；键须已存在，且目标值类型须与当前值一致",
+    )
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _strip_name(cls, v: Any) -> str:
+        return _strip_nonempty_str(v, field="patch name")
+
+    @field_validator("patch", mode="before")
+    @classmethod
+    def _coerce_patch_map(cls, v: Any) -> dict[str, Any]:
+        if not isinstance(v, dict):
+            raise TypeError("patch must be a dict")
+        out: dict[str, Any] = {}
+        for k, val in v.items():
+            if not isinstance(k, str):
+                raise TypeError("patch keys must be str")
+            ks = k.strip()
+            if not ks:
+                raise ValueError("patch keys must be non-empty")
+            out[ks] = val
+        return out
 
 
 class PatchBayConfig(BaseModel):
@@ -69,6 +120,10 @@ class PatchBayConfig(BaseModel):
 
     jacks: list[JackEntry] = Field(description="Jack 清单（name + TCP 远端 host:port）")
     wires: list[Wire] = Field(description="连线；rule 可省略表示恒为真")
+    patchs: list[PatchEntry] = Field(
+        default_factory=list,
+        description="具名补丁表，供 wires.patchs 引用",
+    )
     rules: dict[str, str] = Field(
         default_factory=dict,
         description="rule_id → 条件表达式（express_evaluator）",
@@ -106,6 +161,11 @@ class PatchBayConfig(BaseModel):
         addrs = [j.address for j in self.jacks]
         if len(set(addrs)) != len(addrs):
             raise ValueError("jacks 中 address 必须唯一")
+        patch_by_name: dict[str, PatchEntry] = {}
+        for p in self.patchs:
+            if p.name in patch_by_name:
+                raise ValueError(f"patchs 中 name 必须唯一: {p.name!r}")
+            patch_by_name[p.name] = p
         name_set = set(names)
         for w in self.wires:
             if w.from_jack not in name_set:
@@ -113,19 +173,23 @@ class PatchBayConfig(BaseModel):
             if w.to_jack not in name_set:
                 raise ValueError(f"连线引用未知 Jack（to）: {w.to_jack!r}")
             if w.rule is None:
-                continue
-            if w.rule not in self.rules:
+                pass
+            elif w.rule not in self.rules:
                 raise ValueError(f"连线引用未知规则 id: {w.rule!r}")
-            expr = self.rules[w.rule].strip()
-            if not expr:
-                raise ValueError(f"规则 {w.rule!r} 的表达式为空")
+            else:
+                expr = self.rules[w.rule].strip()
+                if not expr:
+                    raise ValueError(f"规则 {w.rule!r} 的表达式为空")
+            for pn in w.patchs:
+                if pn not in patch_by_name:
+                    raise ValueError(f"连线引用未知补丁名: {pn!r}")
         return self
 
 
 class ResolvedWire:
     """运行期解析后的一条线（含表达式正文）。"""
 
-    __slots__ = ("from_jack", "to_jack", "expression")
+    __slots__ = ("from_jack", "to_jack", "expression", "patch_steps")
 
     def __init__(
         self,
@@ -133,10 +197,12 @@ class ResolvedWire:
         from_jack: str,
         to_jack: str,
         expression: str,
+        patch_steps: tuple[tuple[str, dict[str, Any]], ...],
     ) -> None:
         self.from_jack = from_jack
         self.to_jack = to_jack
         self.expression = expression
+        self.patch_steps = patch_steps
 
 
 class RoutingTable:
@@ -152,17 +218,23 @@ class RoutingTable:
 
     @classmethod
     def from_config(cls, config: PatchBayConfig) -> RoutingTable:
+        patch_by_name = {p.name: p for p in config.patchs}
         resolved: list[ResolvedWire] = []
         for w in config.wires:
             if w.rule is None:
                 expr = "True"
             else:
                 expr = config.rules[w.rule].strip()
+            steps: list[tuple[str, dict[str, Any]]] = []
+            for pn in w.patchs:
+                pe = patch_by_name[pn]
+                steps.append((pe.name, dict(pe.patch)))
             resolved.append(
                 ResolvedWire(
                     from_jack=w.from_jack,
                     to_jack=w.to_jack,
                     expression=expr,
+                    patch_steps=tuple(steps),
                 )
             )
         return cls(resolved)
@@ -180,6 +252,9 @@ class RoutingTable:
                         "from_jack": fj,
                         "to_jack": w.to_jack,
                         "expression": w.expression,
+                        "patch_steps": [
+                            {"name": n, "patch": p} for n, p in w.patch_steps
+                        ],
                     }
                 )
         return rows
