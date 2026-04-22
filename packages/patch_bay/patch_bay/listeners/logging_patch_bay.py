@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 
-from .patch_bay_listener import PatchBayListener
 from ._preset import (
     ListenerLogLevel,
     _RICH,
@@ -11,12 +10,13 @@ from ._preset import (
     _payload_for_level,
 )
 
+from .patch_bay_listener import PatchBayListener
+
 
 class LoggingPatchBayListener(PatchBayListener):
-    """事件用人话单行输出：装了 Rich 就用 Rich，否则用 logging。
+    """事件用人话单行输出；有彩色控制台扩展时优先用它，否则用标准库日志。
 
-    ``level``：``info`` 只打拓扑与转发结果等常用步骤，数据包摘要；
-    ``debug`` 额外打印每条入站 send、路由跳过等，且数据包尽量完整。
+    信息级别侧重拓扑与转发结果及载荷摘要；调试级别额外打印入站与路由跳过等细节。
     """
 
     def __init__(

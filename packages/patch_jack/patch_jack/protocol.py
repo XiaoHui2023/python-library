@@ -57,7 +57,7 @@ def decode_frame(raw: bytes) -> Frame:
 
 
 def error_frame(message: str) -> Frame:
-    """构造发往对端接入点的错误通知帧（说明文本以 UTF-8 置于载荷）。
+    """构造发往接入点一侧的错误通知帧（说明文本以 UTF-8 置于载荷）。
 
     Args:
         message: 给人看的简短错误说明。

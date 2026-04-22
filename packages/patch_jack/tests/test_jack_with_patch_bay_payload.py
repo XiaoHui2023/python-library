@@ -4,10 +4,13 @@ import asyncio
 import unittest
 from unittest.mock import patch
 
+import pytest
 from pydantic import BaseModel
 
-from patch_bay.jack import Jack
+pytest.importorskip("patch_bay")
+
 from patch_bay.patchbay import PatchBay
+from patch_jack import Jack
 
 
 class _Msg(BaseModel):
@@ -18,7 +21,7 @@ async def _run_pb(pb: PatchBay) -> None:
     await pb.serve()
 
 
-class TestJackPayload(unittest.IsolatedAsyncioTestCase):
+class TestJackWithPatchBayPayload(unittest.IsolatedAsyncioTestCase):
     async def test_pydantic_model_roundtrip(self) -> None:
         ja = Jack(0, host="127.0.0.1")
         jb = Jack(0, host="127.0.0.1")
@@ -79,7 +82,7 @@ class TestJackPayload(unittest.IsolatedAsyncioTestCase):
         jack_a = ja
         pb_task = asyncio.create_task(_run_pb(pb))
         await asyncio.sleep(0.5)
-        with patch("patch_bay.jack.logger.error") as mock_err:
+        with patch("patch_jack.jack.logger.error") as mock_err:
             await jack_a.send({"x": 1})
             await asyncio.sleep(0.2)
             mock_err.assert_called()

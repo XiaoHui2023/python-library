@@ -3,15 +3,19 @@ from __future__ import annotations
 import asyncio
 import unittest
 
-from patch_bay.jack import Jack
+import pytest
+
+pytest.importorskip("patch_bay")
+
 from patch_bay.patchbay import PatchBay
+from patch_jack import Jack
 
 
 async def _run_pb(pb: PatchBay) -> None:
     await pb.serve()
 
 
-class TestIntegration(unittest.IsolatedAsyncioTestCase):
+class TestPatchBayIntegration(unittest.IsolatedAsyncioTestCase):
     async def test_send_receive_with_rule(self) -> None:
         ja = Jack(0, host="127.0.0.1")
         jb = Jack(0, host="127.0.0.1")
@@ -85,6 +89,60 @@ class TestIntegration(unittest.IsolatedAsyncioTestCase):
         await pb_task
         await jack_a.aclose()
         await jack_b.aclose()
+
+    async def test_four_endpoints_two_inputs_two_outputs_isolated(self) -> None:
+        """四端点：in1→out1、in2→out2，两路分别投递且互不串包。"""
+        in1 = Jack(0, host="127.0.0.1")
+        out1 = Jack(0, host="127.0.0.1")
+        in2 = Jack(0, host="127.0.0.1")
+        out2 = Jack(0, host="127.0.0.1")
+        await in1.start()
+        await out1.start()
+        await in2.start()
+        await out2.start()
+
+        cfg = {
+            "jacks": [
+                {"name": "in1", "address": in1.listen_address},
+                {"name": "out1", "address": out1.listen_address},
+                {"name": "in2", "address": in2.listen_address},
+                {"name": "out2", "address": out2.listen_address},
+            ],
+            "wires": [
+                {"from": "in1", "to": "out1"},
+                {"from": "in2", "to": "out2"},
+            ],
+            "rules": {},
+        }
+        pb = PatchBay(cfg)
+
+        received_out1: list[dict] = []
+        received_out2: list[dict] = []
+
+        @out1
+        async def _recv1(payload: dict) -> None:
+            received_out1.append(payload)
+
+        @out2
+        async def _recv2(payload: dict) -> None:
+            received_out2.append(payload)
+
+        pb_task = asyncio.create_task(_run_pb(pb))
+        await asyncio.sleep(0.5)
+
+        await in1.send({"lane": "a", "n": 1})
+        await in2.send({"lane": "b", "n": 2})
+        await asyncio.sleep(0.3)
+
+        self.assertEqual(received_out1, [{"lane": "a", "n": 1}])
+        self.assertEqual(received_out2, [{"lane": "b", "n": 2}])
+
+        await pb.aclose()
+        await pb_task
+        await in1.aclose()
+        await out1.aclose()
+        await in2.aclose()
+        await out2.aclose()
 
 
 if __name__ == "__main__":

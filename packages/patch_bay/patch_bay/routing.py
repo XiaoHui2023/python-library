@@ -8,6 +8,15 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from .peer import canonical_peer
 
 
+def _strip_nonempty_str(v: Any, *, field: str) -> str:
+    if not isinstance(v, str):
+        raise TypeError(f"{field} must be str")
+    s = v.strip()
+    if not s:
+        raise ValueError(f"{field} must be non-empty")
+    return s
+
+
 class JackEntry(BaseModel):
     """配置里声明的一个 Jack：``name`` 供连线复用；``address`` 为该机 **监听** 的 ``host:port``（PatchBay 主动连此地址）。"""
 
@@ -18,6 +27,11 @@ class JackEntry(BaseModel):
         description="Jack 的 WebSocket 监听地址 host:port；在 jacks 中唯一",
     )
 
+    @field_validator("name", mode="before")
+    @classmethod
+    def _strip_name(cls, v: Any) -> str:
+        return _strip_nonempty_str(v, field="name")
+
     @field_validator("address", mode="before")
     @classmethod
     def _strip_address(cls, v: Any) -> str:
@@ -27,7 +41,11 @@ class JackEntry(BaseModel):
 
 
 class Wire(BaseModel):
-    """有向连线：源 name → 目标 name，命中规则表达式时才转发。"""
+    """有向连线：源 name → 目标 name，命中规则表达式时才转发。
+
+    同一 ``from_jack`` 可有多条 ``Wire``：按配置中的顺序依次尝试，每条线独立匹配规则并投递；
+    对端未连上会单独产生 ``on_route_skipped(..., reason=offline)``，不影响其它线。
+    """
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
@@ -37,6 +55,11 @@ class Wire(BaseModel):
         default=None,
         description="规则 id，对应 PatchBayConfig.rules；省略则恒为真、直接通行",
     )
+
+    @field_validator("from_jack", "to_jack", mode="before")
+    @classmethod
+    def _strip_jack_refs(cls, v: Any) -> str:
+        return _strip_nonempty_str(v, field="jack ref")
 
 
 class PatchBayConfig(BaseModel):

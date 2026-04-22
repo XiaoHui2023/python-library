@@ -3,10 +3,14 @@ from __future__ import annotations
 import asyncio
 import unittest
 
-from patch_bay.codec.packet import decode_application_packet
-from patch_bay.jack import Jack
-from patch_bay.listeners import JackListener
+import pytest
+
+pytest.importorskip("patch_bay")
+
 from patch_bay.patchbay import PatchBay
+from patch_jack import Jack
+from patch_jack.codec.packet import decode_application_packet
+from patch_jack.listeners import JackListener
 
 
 async def _run_pb(pb: PatchBay) -> None:
@@ -30,7 +34,7 @@ class _Collect(JackListener):
         self.trace.append(("on_incoming_deliver", (payload,)))
 
 
-class TestJackListener(unittest.IsolatedAsyncioTestCase):
+class TestJackWithPatchBayListener(unittest.IsolatedAsyncioTestCase):
     async def test_listener_lifecycle_and_deliver(self) -> None:
         col = _Collect()
         ja = Jack(0, host="127.0.0.1")

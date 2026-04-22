@@ -24,6 +24,16 @@ PacketHandler = Callable[..., Awaitable[None] | None]
 
 
 def _effective_listen_host_port(site: web.BaseSite, host: str, port: int) -> tuple[str, int]:
+    """在端口交给系统挑选时，解析实际对外监听的主机与端口。
+
+    Args:
+        site: 已由 Web 框架启动、可用于读取底层套接字信息的站点对象。
+        host: 绑定请求里声明的主机名。
+        port: 绑定请求里声明的端口；非零时不做额外探测。
+
+    Returns:
+        对外宣告可用的主机与端口；端口为零且能读到套接字信息时返回系统选定值。
+    """
     if port != 0:
         return host, port
     srv = getattr(site, "_server", None)
@@ -39,6 +49,14 @@ def _effective_listen_host_port(site: web.BaseSite, host: str, port: int) -> tup
 
 
 def _unwrap_annotated(ann: Any) -> Any:
+    """去掉仅服务于类型检查器的元数据包装，保留参与载荷匹配的内层类型。
+
+    Args:
+        ann: 可能带有编辑器或校验附加信息的注解对象。
+
+    Returns:
+        若存在此类包装则返回其内层类型信息，否则原样返回。
+    """
     o = get_origin(ann)
     if o is Annotated:
         return get_args(ann)[0]
@@ -46,6 +64,14 @@ def _unwrap_annotated(ann: Any) -> Any:
 
 
 def _is_union_origin(o: Any) -> bool:
+    """判断注解在运行时的「起源」是否表示多种类型的并集（含可选语义）。
+
+    Args:
+        o: 对注解执行「取起源」后的返回值。
+
+    Returns:
+        起源表示并集时为真。
+    """
     if o is Union:
         return True
     ut = getattr(types, "UnionType", None)
@@ -53,7 +79,19 @@ def _is_union_origin(o: Any) -> bool:
 
 
 def _match_one(ann: Any, decoded: Any) -> tuple[bool, Any]:
-    """按单个注解校验/转换 ``decoded``；返回 ``(False, _)`` 表示应跳过回调。"""
+    """按单条类型注解校验入站载荷是否满足处理器契约，并给出可传入的值。
+
+    覆盖并集（含可选）、任意类型、可校验模型、常见容器、数据类与普通类型等；
+    不满足时写日志并指示不要调用用户处理器。
+
+    Args:
+        ann: 单条形参注解（已去掉元数据包装）。
+        decoded: 已从二进制帧还原的应用层对象。
+
+    Returns:
+        二元组：前者为真表示应调度用户处理器；后者为传入处理器的参数（前者为假时
+        后者无业务意义）。
+    """
     ann = _unwrap_annotated(ann)
     o = get_origin(ann)
     if _is_union_origin(o):
@@ -66,7 +104,7 @@ def _match_one(ann: Any, decoded: Any) -> tuple[bool, Any]:
             if ok:
                 return True, val
         logger.error(
-            "Jack 收包与回调形参类型不符：无法匹配 Union，实际类型为 %s",
+            "Jack 收包与回调形参类型不符：无法匹配并集分支，实际类型为 %s",
             type(decoded).__name__,
         )
         return False, None
@@ -76,7 +114,7 @@ def _match_one(ann: Any, decoded: Any) -> tuple[bool, Any]:
         try:
             return True, ann.model_validate(decoded)
         except ValidationError as e:
-            logger.error("Jack 收包与回调形参类型不符（model_validate）：%s", e)
+            logger.error("Jack 收包与回调形参类型不符（模型校验失败）：%s", e)
             return False, None
     if ann is dict or get_origin(ann) is dict:
         if isinstance(decoded, dict):
@@ -110,7 +148,7 @@ def _match_one(ann: Any, decoded: Any) -> tuple[bool, Any]:
             try:
                 return True, ann(**decoded)
             except TypeError as e:
-                logger.error("Jack 收包与回调形参类型不符（dataclass）：%s", e)
+                logger.error("Jack 收包与回调形参类型不符（数据类构造失败）：%s", e)
                 return False, None
         logger.error(
             "Jack 收包与回调形参类型不符：需要 %s 或对应 dict，实际为 %s",
@@ -131,6 +169,15 @@ def _match_one(ann: Any, decoded: Any) -> tuple[bool, Any]:
 
 
 def _prepare_handler_arg(fn: Callable[..., Any], decoded: Any) -> tuple[bool, Any]:
+    """结合处理器首个形参的类型注解，决定是否向其投递解码结果。
+
+    Args:
+        fn: 用户注册的收包回调（同步或协程均可）。
+        decoded: 已从应用层载荷解码得到的 Python 对象。
+
+    Returns:
+        是否应调用该回调，以及调用时应传入的参数（语义与类型匹配管线一致）。
+    """
     try:
         hints = get_type_hints(fn)
     except Exception:
@@ -147,14 +194,13 @@ def _prepare_handler_arg(fn: Callable[..., Any], decoded: Any) -> tuple[bool, An
 
 
 class Jack:
-    """业务侧接入点：在本机 **被动监听** WebSocket；**允许多个 PatchBay 同时连入**。
+    """业务侧接入点：在本机被动接受交换节点的长连接。
 
-    ``send()`` 将同一帧 **广播** 到当前所有已连接 PatchBay（同一序号 ``seq``），由各交换机各自按路由转发。
+    允许多个交换节点同时接入；出站时向当前所有已连接节点广播同一业务帧（共享
+    序号），由各节点按各自路由策略转发。不与其他同类接入点建立直连。
 
-    构造为 ``Jack(port[, host=...])``：默认 ``host=0.0.0.0``；在 ``host:port`` 上挂 ``ws_path``（默认 ``/ws``）。
-    各 PatchBay 配置里该机 ``address`` 须为对端可达的 ``host:port``。
-
-    可选 ``listeners``：``JackListener`` 子类列表（同步回调）。
+    典型用法：绑定本机地址与端口（可选零端口由系统分配），在配置里把对端可达的
+    监听地址写入交换节点后启动服务。
     """
 
     def __init__(
@@ -165,6 +211,17 @@ class Jack:
         ws_path: str = "/ws",
         listeners: Sequence[JackListener] | None = None,
     ) -> None:
+        """初始化监听参数与空的连接、处理器集合。
+
+        Args:
+            port: 监听端口；为零表示交给操作系统挑选可用端口。
+            host: 绑定主机；空字符串非法。
+            ws_path: 长连接路径；应以斜杠开头（否则自动补上）。
+            listeners: 同步事件监听器序列；缺省为无。
+
+        Raises:
+            ValueError: 端口超出合法范围，或主机名为空。
+        """
         if not (0 <= port <= 65535):
             raise ValueError(f"port must be 0..65535, got {port}")
         h = str(host).strip()
@@ -188,12 +245,16 @@ class Jack:
 
     @property
     def listen_address(self) -> str:
-        """本 Jack 用于填入 PatchBay 的 ``host:port`` 提示；须先 ``await start()``。
+        """供写入交换侧配置的主机与端口文本（IPv6 时含方括号约定）。
 
-        若绑定在 ``0.0.0.0``，此处为 ``127.0.0.1:port`` 便于本机互通；跨机请在配置中写真实网卡 IP。
+        Returns:
+            主机、端口组成的可配置字符串。
+
+        Raises:
+            RuntimeError: 在尚未成功启动监听前访问。
         """
         if self._eff_host is None or self._eff_port is None:
-            raise RuntimeError("listen_address is only available after start()")
+            raise RuntimeError("须先启动监听再读取监听地址")
         h = self._eff_host
         if h == "0.0.0.0":
             h = "127.0.0.1"
@@ -202,12 +263,24 @@ class Jack:
         return f"{h}:{self._eff_port}"
 
     def build_application(self) -> web.Application:
-        """构建含 WebSocket 路由的 aiohttp 应用；供测试嵌入或自定义挂载。"""
+        """构造仅含本节点长连接路由的小型 Web 应用，便于嵌入测试或自定义挂载。
+
+        Returns:
+            已注册长连接路由的应用实例。
+        """
         app = web.Application()
         app.router.add_get(self._ws_path, self._handle_ws)
         return app
 
     async def _handle_ws(self, request: web.Request) -> web.WebSocketResponse:
+        """接受单条来自交换节点的长连接：收包、解码、分发，并在断开时清理登记。
+
+        Args:
+            request: 进入的、即将升级为长连接的 HTTP 请求。
+
+        Returns:
+            已结束生命周期的长连接响应对象。
+        """
         ws = web.WebSocketResponse()
         await ws.prepare(request)
         async with self._ws_lock:
@@ -234,7 +307,13 @@ class Jack:
         return ws
 
     async def start(self) -> None:
-        """在本机绑定并开始接受 PatchBay 的入站 WebSocket。"""
+        """在本机绑定并开始接受交换节点的入站长连接。
+
+        幂等：已启动时直接返回。
+
+        Returns:
+            无。
+        """
         if self._runner is not None:
             return
         self._aclose_done = False
@@ -251,11 +330,19 @@ class Jack:
         emit_jack_listeners(self._listeners, "on_listen_started", self.listen_address)
 
     async def join(self) -> None:
-        """阻塞直至 `aclose()` 完成。"""
+        """阻塞直至关闭流程结束（与主动关闭方法配对使用）。
+
+        Returns:
+            无。
+        """
         await self._stopped.wait()
 
     async def run(self) -> None:
-        """等价于 ``start()`` + 阻塞直至退出信号或主任务取消 + ``aclose()``。"""
+        """启动监听，随后阻塞至常见中断意图或任务取消，最后回收资源。
+
+        Raises:
+            CancelledError: 外层任务被取消时原样向上传递。
+        """
         await self.start()
         try:
             await wait_until_interrupt()
@@ -265,7 +352,11 @@ class Jack:
             await self.aclose()
 
     async def aclose(self) -> None:
-        """停止监听并关闭当前链路。"""
+        """停止监听、断开对端并释放底层 Web 服务资源；可安全重复调用。
+
+        Returns:
+            无。
+        """
         if self._aclose_done:
             return
         self._aclose_done = True
@@ -290,16 +381,40 @@ class Jack:
         self._stopped.set()
 
     def register(self, fn: PacketHandler) -> PacketHandler:
-        """显式注册收包回调；与 ``jack(fn)`` / ``@jack`` 等价。"""
+        """注册收包处理器；支持装饰器写法。
+
+        Args:
+            fn: 同步或异步回调；首个位置参数接收解码后的载荷。
+
+        Returns:
+            传入的同一可调用对象，便于链式装饰器。
+        """
         self._handlers.append(fn)
         return fn
 
     def __call__(self, fn: PacketHandler) -> PacketHandler:
-        """``@jack`` 或 ``jack(handler)`` 注册回调，等价于 ``register``。"""
+        """以实例本身作为装饰器注册收包回调，语义与显式注册相同。
+
+        Args:
+            fn: 待注册的收包回调。
+
+        Returns:
+            传入的同一可调用对象，便于链式装饰器。
+        """
         return self.register(fn)
 
     async def send(self, packet: object) -> None:
-        """向当前所有已连接的 PatchBay **广播** 同一帧业务数据包（同一 ``seq``）。"""
+        """将业务载荷编码后广播给当前所有已连接的交换节点（共享帧序号）。
+
+        编码失败或当前无连接时写日志并通知监听器；类型不被支持时仍按语言惯例
+        抛出类型错误。
+
+        Args:
+            packet: 映射、可校验声明式模型、数据类实例等，详见包内编码器约定。
+
+        Raises:
+            TypeError: 载荷类型不被编码器支持时。
+        """
         try:
             data = encode_application_packet(packet)
         except TypeError:
@@ -313,7 +428,7 @@ class Jack:
         async with self._ws_lock:
             targets = [w for w in self._peers if not w.closed]
         if not targets:
-            logger.warning("Jack %r: send dropped (no PatchBay connected)", self.listen_address)
+            logger.warning("Jack %r: 已丢弃发送（无交换节点连接）", self.listen_address)
             emit_jack_listeners(self._listeners, "on_send_dropped", "not_connected")
             return
         results = await asyncio.gather(
@@ -324,7 +439,7 @@ class Jack:
         if failures:
             ex = next((r for r in results if isinstance(r, BaseException)), None)
             logger.warning(
-                "Jack %r: broadcast send failures %s/%s to PatchBay peers",
+                "Jack %r: 向交换节点广播发送失败 %s/%s",
                 self.listen_address,
                 failures,
                 len(targets),
@@ -334,14 +449,29 @@ class Jack:
                 emit_jack_listeners(self._listeners, "on_send_failed")
 
     def send_sync(self, packet: object) -> None:
-        """同步发送；需在已有事件循环的上下文中使用。"""
+        """在已有事件循环线程上，以阻塞方式完成一次与异步发送方法等价的投递。
+
+        Args:
+            packet: 与异步发送方法相同的业务载荷。
+
+        Raises:
+            RuntimeError: 尚未完成监听启动、没有可用事件循环时。
+        """
         loop = self._loop
         if loop is None:
-            raise RuntimeError("call start() before send_sync()")
+            raise RuntimeError("须先启动监听再使用同步发送")
         fut = asyncio.run_coroutine_threadsafe(self.send(packet), loop)
         fut.result(timeout=30.0)
 
     async def _dispatch_frame(self, frame: Frame) -> None:
+        """按帧语义分支：投递业务载荷、记录交换侧错误或确认发送序号。
+
+        Args:
+            frame: 已由有线层解码的一帧。
+
+        Returns:
+            无。
+        """
         if frame.kind == "hello":
             return
         if frame.kind == "deliver" and frame.payload is not None:
@@ -349,13 +479,21 @@ class Jack:
             await self._emit_payload_parallel(frame.payload)
         elif frame.kind == "error" and frame.payload is not None:
             msg = frame.payload.decode("utf-8", errors="replace")
-            logger.error("PatchBay error for %s: %s", self.listen_address, msg)
+            logger.error("交换节点报错（%s）：%s", self.listen_address, msg)
             emit_jack_listeners(self._listeners, "on_patchbay_error", msg)
         elif frame.kind == "ack" and frame.seq is not None:
             emit_jack_listeners(self._listeners, "on_ack", frame.seq)
             logger.debug("Jack %s ack seq=%s", self.listen_address, frame.seq)
 
     async def _emit_payload_parallel(self, payload: bytes) -> None:
+        """并行调度所有已注册处理器；同步回调放入默认线程池。
+
+        Args:
+            payload: 仍为一帧中的应用层二进制块，将在内层解码。
+
+        Returns:
+            无。
+        """
         if not self._handlers:
             return
         try:
@@ -366,6 +504,14 @@ class Jack:
         loop = asyncio.get_running_loop()
 
         async def _one(h: PacketHandler) -> None:
+            """对单个处理器做一次类型校验与调用；同步回调走线程池。
+
+            Args:
+                h: 当前待调度的收包处理器。
+
+            Returns:
+                无。
+            """
             ok, arg = _prepare_handler_arg(h, decoded)
             if not ok:
                 return

@@ -67,6 +67,41 @@ class TestRouting(unittest.TestCase):
         self.assertEqual(len(w), 1)
         self.assertEqual(w[0].expression, "True")
 
+    def test_same_from_multiple_wires_order(self) -> None:
+        """同一 from 多条线按 YAML 顺序进入 RoutingTable。"""
+        cfg = patch_bay_config_from_dict(
+            {
+                "jacks": [
+                    {"name": "in", "address": "h:1"},
+                    {"name": "out", "address": "h:2"},
+                    {"name": "spare", "address": "h:3"},
+                ],
+                "wires": [
+                    {"from": "in", "to": "out"},
+                    {"from": "in", "to": "spare"},
+                ],
+                "rules": {},
+            }
+        )
+        rt = RoutingTable.from_config(cfg)
+        w = list(rt.iter_from_jack("in"))
+        self.assertEqual([x.to_jack for x in w], ["out", "spare"])
+
+    def test_jack_and_wire_names_are_stripped(self) -> None:
+        cfg = patch_bay_config_from_dict(
+            {
+                "jacks": [
+                    {"name": " a ", "address": "h:1"},
+                    {"name": " b ", "address": "h:2"},
+                ],
+                "wires": [{"from": " a ", "to": " b "}],
+                "rules": {},
+            }
+        )
+        self.assertEqual(cfg.jacks[0].name, "a")
+        self.assertEqual(cfg.wires[0].from_jack, "a")
+        self.assertEqual(cfg.wires[0].to_jack, "b")
+
 
 if __name__ == "__main__":
     unittest.main()

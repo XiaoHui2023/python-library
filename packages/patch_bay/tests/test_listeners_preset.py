@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import msgpack
 
-from patch_bay.listeners import LoggingJackListener, LoggingPatchBayListener
+from patch_bay.listeners import LoggingPatchBayListener
 from patch_bay.listeners._preset import _payload_preview
 
 
@@ -27,17 +27,6 @@ class TestListenersPreset(unittest.TestCase):
         lst.on_listen_started("127.0.0.1", 8765)
         lst.on_jack_connected("a", "127.0.0.1")
         lst.on_packet_delivered("a", "b", b"hi")
-
-    @patch("patch_bay.listeners._preset._console", None)
-    def test_logging_jack_smoke(self) -> None:
-        log = logging.getLogger("test.jack")
-        log.handlers.clear()
-        log.addHandler(logging.NullHandler())
-        lst = LoggingJackListener(logger=log)
-        lst.on_listen_started("127.0.0.1:7001")
-        lst.on_link_up()
-        lst.on_incoming_deliver(b"x" * 40)
-        lst.on_ack(1)
 
 
 if __name__ == "__main__":

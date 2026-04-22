@@ -21,7 +21,8 @@ async def _run_pb(pb) -> None:
 
 async def demo() -> None:
     """两 Jack 先在本机监听，PatchBay 按配置主动连上后路由互通。"""
-    from patch_bay import Jack, LoggingJackListener, LoggingPatchBayListener, PatchBay
+    from patch_bay import LoggingPatchBayListener, PatchBay
+    from patch_jack import Jack, LoggingJackListener
 
     _configure_logging()
 
