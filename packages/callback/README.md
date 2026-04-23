@@ -1,38 +1,105 @@
 # callback
 
-**给 Agent 的摘要**：用 `Callback` 子类描述一次调用的**载荷（字段）**；把具体逻辑用装饰器**托管**到注册函数里；`trigger` / `atrigger` 会**等处理函数跑完**再返回**同一个实例**，从上面读被更新后的状态。
+## 特性
 
-## 定位
+这个库做三件事，记清楚就够用了：
 
-- 把业务逻辑从调用点**拆出去**，由注册函数在触发时执行。
-- **同步** `trigger`：内部用线程池跑各注册函数并 `future.result()`，**阻塞**直到全部结束。
-- **异步** `atrigger`：`asyncio.gather` 等待全部协程，需在 async 上下文里 `await`。
-- 返回值始终是本次触发的 `Callback` 实例；惯例是在 handler 里**改实例上的字段**作为结果。
+1. 你写一个 **Callback 子类**，类里的类型注解 = **这次调用要带哪些字段**（像一张固定格式的表）。
 
-## 最小用法
+2. 处理函数按 **前（before）、中间、后（after）** 三层登记；**触发**按 **先整层前、再整层中间、再整层后** 的顺序跑；**同一层里**多个函数仍然是一起跑、等这一层**全部结束**再进下一层。
+
+3. **触发结束后的返回值就是这一次的那条实例**——不是副本；外面继续用这个对象读字段，就是处理函数改完之后的样子。
+
+### 推荐写法（少写 `register` / `trigger`）
+
+元类把「对子类的类调用」收成两种常用形态，日常可以**只写子类名**：
+
+| 写法 | 等价于 | 含义 |
+|------|--------|------|
+| **`@OrderPaid`**（装饰在函数上） | **`OrderPaid.register(函数)`** | 向**中间层**登记 |
+| **`OrderPaid(order_id="a")`** | **`OrderPaid.trigger(order_id="a")`** | 同步跑完三层管线，**阻塞**至全部回调结束，返回**同一条**已可能被回调改过的实例 |
+
+仍可直接调用 **`register` / `register_before` / `register_after` / `trigger`**，与上表语义一致。
+
+**注意**：「单参数、且为可调用对象、且无关键字参数」的类调用**一律**按**装饰器登记**处理，不会当数据去触发。若某次载荷里第一个字段就是要传的可调用对象，请改用**关键字参数**触发，例如 **`MyCb(fn=my_callable)`**，避免与 **`@MyCb`** 形态撞车。
+
+### 子类定义「一次调用」的数据
+
+触发时你传构造参数，库按子类字段**校验、填默认值**。多出来的参数名（类里没声明的）**不能**传进来。
+
+### 哪些名字算数据字段
+
+只有「普通类型注解、名字不以 `_` 开头」的才算在**这一次调用的数据**里。
+
+| 写法 | 算不算这次调用的字段 |
+|------|----------------------|
+| `count: int` | 算 |
+| `_tmp: int` | **不算**（给「只想给类型检查看、不想当数据」用的） |
+| `foo: ClassVar[...]` | **不算**（写在类上、不是每次调用一条记录上的字段） |
+
+### 字段类型可以是任意对象
+
+字段不限于数字、字符串：**任何 Python 对象**都能放进这条实例里（比如一个已经建好的服务对象）。处理函数和调用方拿到的是**同一个对象引用**。
+
+### 登记挂在「每个子类自己的 `layers`」上
+
+没有模块级全局注册表。每个 **Callback 子类** 在类定义结束时会挂上 **`子类.layers`**，类型是 **`CallbackLayers`**，并把 **`子类.before` / `子类.middle` / `子类.after`** 指到与 **`layers`** 相同的三段上。基类 **`Callback`** 在包加载末尾同样挂上自己的 **`layers`** 与三段别名。若在**类体内部**就要写装饰器，请用 **`@子类.layers.before`** 等形式（此时子类上的 `before` 等尚未绑定）；类定义**结束之后**再写 `@子类.before` 与写在类外等价。
+
+`CallbackLayers` 上只有三个对外属性，对应三层：
+
+| 属性 | 含义 |
+|------|------|
+| **`layers.before`** | 前层 |
+| **`layers.middle`** | 中间层 |
+| **`layers.after`** | 后层 |
+
+每一层都是一个 **`LayerTier`**：可以 **`tier.register(函数)`**，也可以 **`@子类.layers.before`** 这种把 `tier` 当装饰器。子类之间**各自一份** `layers`，不会跟父类共用一张表。
+
+### 处理函数三层：和装饰器 / `register*` 的对应关系
+
+| 阶段 | 装饰器 | 直接操作 `layers` | 类方法 |
+|------|--------|-------------------|--------|
+| 前 | `@类名.before` | `@类名.layers.before` 或 `类名.layers.before.register(fn)` | `类名.register_before(fn)` |
+| 中间 | `@类名` | `@类名.layers.middle` 或 `类名.layers.middle.register(fn)` | `类名.register(fn)` |
+| 后 | `@类名.after` | `@类名.layers.after` 或 `类名.layers.after.register(fn)` | `类名.register_after(fn)` |
+
+中间这一层和以前「直接 `@类名`」是同一回事。函数照样可以**带**这次的数据参数，也可以**不带**。
 
 ```python
-from callback import Callback
-
-class OrderPaid(Callback):
-    order_id: str
-    amount: int  # handler 里可改写
+@OrderPaid.before
+def prepare(cb: OrderPaid) -> None:
+    ...
 
 @OrderPaid
-def on_paid(cb: OrderPaid) -> None:
-    cb.amount += 1  # 示例：更新状态
+def bump_total(cb: OrderPaid) -> None:
+    cb.total += 1
 
-cb = OrderPaid.trigger(order_id="a", amount=100)
-# cb 即本次载荷；阻塞已结束，可读更新后的字段
-assert cb.amount == 101
+@OrderPaid.after
+def notify(cb: OrderPaid) -> None:
+    ...
+
+# 与 OrderPaid.trigger(...) 相同：跑完三层后得到这一条实例
+paid = OrderPaid(order_id="x", total=1)
 ```
 
-异步回调：子类设 `_async = True`，用 `@Cls` 注册 `async def`，用 `await Cls.atrigger(...)`。
+### 同一个函数在同一层里注册多次，也只保留一份
 
-## 规则（实现相关）
+**同一个函数对象**在同一层里你登记两遍，内部还是**一条**，这一层触发时**只跑一次**。两个不同的函数就各算各的。
 
-- 载荷字段：类体里**类型注解**的普通属性；`ClassVar`、以下划线 `_` 开头的名字**不算**字段。
-- 注册：`@MyCallback` 装饰函数；可 `def h(cb: MyCallback)` 或 `def h()`（无参）。**同一函数对象**若再次装饰注册，只会保留一份，触发时该函数**不会执行两次**（两个不同的函数会各执行一次）。
-- 同步 / 异步必须一致：同步类不能注册 `async def`；异步类（`_async = True`）不能注册普通 `def`。
-- 可重写钩子：`before_trigger` / `after_trigger`（同步），`before_atrigger` / `after_atrigger`（异步）。
-- 无注册函数时，`trigger` / `atrigger` 仍会构造并返回实例。
+（同一函数**可以**分别出现在不同层，那是三层各一条，各跑一次。）
+
+### 触发（`trigger` 与 **`子类(...)`**）
+
+- **同步入口**：**`SomeCallback.trigger(...)`** 与 **`SomeCallback(...)`** 等价；在**当前线程没有正在运行的事件循环**时，内部用 **`asyncio.run`** 跑完整条异步管线并**阻塞**到结束。
+- **已在事件循环里**（例如在 **`async def`** 里直接调用）时，**不能**在本线程上阻塞式 **`trigger` / `子类(...)`**；请从普通同步上下文触发，或放到**另起线程**里再调。
+- **登记**：同一子类上可以**同时**登记 **`def`** 与 **`async def`**。
+- **层与层之间**：严格按 **前 → 中间 → 后**；上一层的函数**全部跑完**，才进下一层。
+- **同一层内**：多个处理函数**一起收尾**（协程在本层并发；普通函数在线程里执行，避免卡住事件循环），整层结束后再进下一层。
+- 返回值 = **这一次**新建的那条子类实例（**`子类(...)`** 与 **`trigger`** 返回同一条引用语义）。
+- **一层里一个函数都没挂**，那一层相当于跳过；三层都空也会先建好实例再返回。
+
+### `get_all`、`register*` 与清空登记
+
+- **`get_all`**：列出 **Callback 的直接子类**（儿子辈）。孙子类、更下面的子类**不会**出现在这个列表里。
+- **`register` / `register_before` / `register_after`**：和对应 `layers` 上的 `.register` **同一套规则**（去重）。
+- 单测或进程里想**一次清空所有子类**已挂的函数：调用 **`Callback.clear_layer_registries()`**（会递归扫子类，对每个已在 `__dict__` 里创建过的 `layers` 调用 `clear()`）。

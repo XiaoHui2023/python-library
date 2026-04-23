@@ -3,18 +3,20 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
-from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable, ClassVar, TypeVar, get_origin
+from collections.abc import Callable
+from typing import Any, ClassVar, TypeVar, get_origin
 
 from pydantic import BaseModel, ConfigDict
 from pydantic._internal._model_construction import ModelMetaclass
+
+from callback.registry import CallbackLayers, LayerTier
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T", bound="Callback")
 
 
 def _annotation_is_classvar(tp: object) -> bool:
-    """Whether ``tp`` is a :class:`typing.ClassVar` annotation (resolved or postponed string)."""
+    """供元类判断某注解是否表示类变量，从而不把其名字当作载荷字段。"""
     if isinstance(tp, str):
         s = tp.strip()
         return (
@@ -26,9 +28,9 @@ def _annotation_is_classvar(tp: object) -> bool:
 
 
 class CallbackMeta(ModelMetaclass):
-    """构建模型前从类体 ``__annotations__`` 中移除「单下划线前缀且非 ClassVar」的名字。
+    """在 Pydantic 建表前裁剪类体注解，使只做类型约定的名字不参与载荷校验。
 
-    这样 ``_x: int`` 仅作类型检查约定、不参与载荷与校验；``_async: ClassVar[bool]`` 等仍保留。
+    对子类做「类调用」时：单参且为可调用对象且无关键字参数时走中间层登记；否则走同步触发并返回管线结束后的实例。
     """
 
     def __new__(
@@ -48,52 +50,33 @@ class CallbackMeta(ModelMetaclass):
             namespace = {**namespace, "__annotations__": filtered}
         return super().__new__(mcs, cls_name, bases, namespace, **kwargs)
 
+    def __call__(cls, *args: Any, **kwargs: Any) -> Any:
+        """`子类(可调用对象)` 等价于 `register`；其余参数形态等价于同步 `trigger`。"""
+        if len(args) == 1 and not kwargs and callable(args[0]):
+            func = args[0]
+            cls.register(func)
+            return func
+        return cls.trigger(*args, **kwargs)
+
 
 class Callback(BaseModel, metaclass=CallbackMeta):
-    """
-    回调基类：基于 Pydantic :class:`~pydantic.BaseModel`，注解字段为载荷；注册函数在 ``trigger`` 时并发执行；返回的实例可被读取、被 handler 修改。
+    """带分层登记的载荷模型：注解字段描述一次调用的数据，监听者按前中后三层登记在类型上并顺序触发。
 
-    定义结构（字段即构造 ``trigger`` 的参数）。可从 ``pydantic`` 导入 ``Field`` 描述默认值与说明等::
-
-        from pydantic import Field
-
-        class A(Callback):
-            attr: str = Field(default="x", description="...")
-
-    触发（同步会等到全部注册函数结束；异步需 ``_async = True`` 且用 ``atrigger``）::
-
-        cb = A.trigger(attr=value)
-        cb = await A.atrigger(attr=value)
-
-    注册处理函数（子类作装饰器；签名可 ``(cb: A)`` 或 ``()``）::
-
-        @A
-        def func(cb: A) -> None: ...
-
-    同一函数对象若再次 ``@A`` 注册，不会重复加入列表，触发时该函数只执行一次（不同函数则各执行一次）。
-
-    实现要点：同步 ``trigger`` 使用线程池并等待完成；无注册函数时仍会构造并返回实例。实例化经 Pydantic 校验与默认值处理。
+    子类在创建时会把三层入口显式绑到对应的登记对象上，阅读类定义即可看到分层能力从哪来。
+    推荐少写方法名：`@子类` 等价于向中间层登记；`子类(...)` 等价于同步触发并返回管线结束后的同一条实例。
+    登记可同时包含普通函数与协程（内部仍用 asyncio 调度）。
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
-    function_registry: ClassVar[dict[str, list[Callable]]] = {}
-    """注册的函数列表"""
-    _async: ClassVar[bool] = False
-    """是否异步"""
-
-    def __new__(cls, *args: Any, **kwargs: Any) -> Any:
-        """支持把 Callback 子类直接当装饰器使用"""
-        if len(args) == 1 and not kwargs and callable(args[0]):
-            func = args[0]
-            if cls._async != asyncio.iscoroutinefunction(func):
-                raise ValueError(
-                    f"函数{func}是{'异步' if asyncio.iscoroutinefunction(func) else '同步'}，"
-                    f"但回调{cls.__name__}是{'异步' if cls._async else '同步'}"
-                )
-            cls.register(func)
-            return func
-        return super().__new__(cls)
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """为子类准备分层登记容器，并把前中后三段入口绑到该容器上。"""
+        super().__init_subclass__(**kwargs)
+        if "layers" not in cls.__dict__:
+            cls.layers = CallbackLayers()
+        cls.before = cls.layers.before
+        cls.middle = cls.layers.middle
+        cls.after = cls.layers.after
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         cls = self.__class__
@@ -109,7 +92,6 @@ class Callback(BaseModel, metaclass=CallbackMeta):
                 merged[key] = value
             else:
                 raise ValueError(f"未知属性[{key}]: {value}")
-        # 前向引用等导致模型未完成定义时，校验器不可用；与旧版 Callback 一致仅做字段赋值
         if not cls.__pydantic_complete__:
             tmp = cls.model_construct(**merged)
             self.__dict__.update(tmp.__dict__)
@@ -122,73 +104,70 @@ class Callback(BaseModel, metaclass=CallbackMeta):
         super().__init__(**merged)
 
     @classmethod
-    def register(cls, func: Callable):
-        """注册函数；同一 ``func`` 对象不会重复加入。"""
-        try:
-            if cls.__name__ not in cls.function_registry:
-                cls.function_registry[cls.__name__] = []
-            if func not in cls.function_registry[cls.__name__]:
-                cls.function_registry[cls.__name__].append(func)
-        except Exception as e:
-            logger.exception(f"注册函数{func}失败: {e}")
-            raise e
+    def register(cls, func: Callable[..., Any]) -> None:
+        """向中间层登记处理函数；与仅把子类型当作装饰器使用时的语义相同。"""
+        cls.layers.middle.register(func)
 
     @classmethod
-    def trigger(cls: type[T], *args: Any, **kwargs: Any) -> T:
-        """同步触发回调"""
+    def register_before(cls, func: Callable[..., Any]) -> None:
+        """向最先执行的一层登记处理函数。"""
+        cls.layers.before.register(func)
+
+    @classmethod
+    def register_after(cls, func: Callable[..., Any]) -> None:
+        """向最后执行的一层登记处理函数。"""
+        cls.layers.after.register(func)
+
+    @classmethod
+    def clear_layer_registries(cls) -> None:
+        """清空从本类型出发整棵子类树上的分层登记，供测试或进程内重置。"""
+        stack: list[type[Any]] = list(cls.__subclasses__())
+        while stack:
+            c = stack.pop()
+            stack.extend(c.__subclasses__())
+            reg = c.__dict__.get("layers")
+            if reg is not None:
+                reg.clear()
+
+    @classmethod
+    async def _trigger_pipeline_async(cls: type[T], *args: Any, **kwargs: Any) -> T:
+        """层顺序为前、中、后；每层内并发，整层结束后再进下一层。
+
+        同一层里协程与普通可调用对象可混登记：协程在本层并发收尾，普通函数在线程里执行，避免占满事件循环。
+        """
         try:
-            self = cls(*args, **kwargs)
-
-            self.before_trigger()
-            funcs = cls.function_registry.get(cls.__name__, [])
-            with ThreadPoolExecutor() as executor:
-                futures = [executor.submit(self._call_registered, func, self) for func in funcs]
-                for future in futures:
-                    future.result()
-            self.after_trigger()
-
+            self = object.__new__(cls)
+            cls.__init__(self, *args, **kwargs)
+            for funcs in cls.layers.tier_lists_in_order():
+                if not funcs:
+                    continue
+                tasks = [cls._acall_registered(func, self) for func in funcs]
+                await asyncio.gather(*tasks)
             return self
         except Exception as e:
             logger.exception(f"触发回调{cls}失败: {e}")
             raise e
 
     @classmethod
-    async def atrigger(cls: type[T], *args: Any, **kwargs: Any) -> T:
-        """异步触发回调"""
+    def trigger(cls: type[T], *args: Any, **kwargs: Any) -> T:
+        """同步触发入口：当前线程无正在运行的事件循环时，内部用 asyncio.run 跑完整条管线。
+
+        若已在事件循环中（例如在 async def 里），无法在此线程上阻塞式触发；请从普通同步上下文调用，
+        或另起线程并在该线程内调用 trigger。
+        """
         try:
-            self = cls(*args, **kwargs)
-
-            await self.before_atrigger()
-            funcs = cls.function_registry.get(cls.__name__, [])
-            tasks = [self._acall_registered(func, self) for func in funcs]
-            if tasks:
-                await asyncio.gather(*tasks)
-            await self.after_atrigger()
-
-            return self
-        except Exception as e:
-            logger.exception(f"异步触发回调{cls}失败: {e}")
-            raise e
-
-    def before_trigger(self) -> None:
-        """同步触发前钩子"""
-        pass
-
-    async def before_atrigger(self) -> None:
-        """异步触发前钩子"""
-        pass
-
-    def after_trigger(self) -> None:
-        """同步触发后钩子"""
-        pass
-
-    async def after_atrigger(self) -> None:
-        """异步触发后钩子"""
-        pass
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(cls._trigger_pipeline_async(*args, **kwargs))
+        msg = (
+            f"已在运行中的事件循环内无法调用 {cls.__name__}.trigger()；"
+            f"请从非事件循环线程触发，或在线程中执行 {cls.__name__}.trigger(...)。"
+        )
+        raise RuntimeError(msg)
 
     @staticmethod
-    def _call_registered(func: Callable, cb: "Callback"):
-        """同步调用注册的函数，支持不传参数"""
+    def _call_registered(func: Callable[..., Any], cb: Callback) -> Any:
+        """调用已登记的处理函数：是否把当前载荷实例传入由可调用对象的参数形态决定。"""
         try:
             sig = inspect.signature(func)
         except (TypeError, ValueError):
@@ -211,8 +190,10 @@ class Callback(BaseModel, metaclass=CallbackMeta):
         return func()
 
     @staticmethod
-    async def _acall_registered(func: Callable, cb: "Callback"):
-        """异步调用注册的函数，支持不传参数"""
+    async def _acall_registered(func: Callable[..., Any], cb: Callback) -> Any:
+        """单次触发调用：协程走异步收尾；普通函数在线程里执行，是否传入载荷由可调用对象的参数形态决定。"""
+        if not asyncio.iscoroutinefunction(func):
+            return await asyncio.to_thread(Callback._call_registered, func, cb)
         try:
             sig = inspect.signature(func)
         except (TypeError, ValueError):
@@ -236,11 +217,12 @@ class Callback(BaseModel, metaclass=CallbackMeta):
 
     @classmethod
     def get_all(cls) -> list[type[Callback]]:
-        """获取所有回调"""
+        """列出从本类型直接派生的子类型。"""
         return list(cls.__subclasses__())
 
     @classmethod
     def _field_names(cls) -> list[str]:
+        """沿继承链汇总参与构造与校验的字段名，排除类变量与下划线开头的约定名。"""
         merged: dict[str, object] = {}
         for base in reversed(cls.__mro__):
             if base is object or base is Callback or base is BaseModel:
@@ -258,6 +240,13 @@ class Callback(BaseModel, metaclass=CallbackMeta):
         return list(merged.keys())
 
 
+Callback.layers = CallbackLayers()
+Callback.before = Callback.layers.before
+Callback.middle = Callback.layers.middle
+Callback.after = Callback.layers.after
+
 __all__ = [
     "Callback",
+    "CallbackLayers",
+    "LayerTier",
 ]
