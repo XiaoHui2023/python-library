@@ -41,27 +41,19 @@
 
 字段不限于数字、字符串：**任何 Python 对象**都能放进这条实例里（比如一个已经建好的服务对象）。处理函数和调用方拿到的是**同一个对象引用**。
 
-### 登记挂在「每个子类自己的 `layers`」上
+### 登记挂在子类**私有** `_layers` 上
 
-没有模块级全局注册表。每个 **Callback 子类** 在类定义结束时会挂上 **`子类.layers`**，类型是 **`CallbackLayers`**，并把 **`子类.before` / `子类.middle` / `子类.after`** 指到与 **`layers`** 相同的三段上。基类 **`Callback`** 在包加载末尾同样挂上自己的 **`layers`** 与三段别名。若在**类体内部**就要写装饰器，请用 **`@子类.layers.before`** 等形式（此时子类上的 `before` 等尚未绑定）；类定义**结束之后**再写 `@子类.before` 与写在类外等价。
+没有模块级全局注册表。每个 **Callback 子类** 在类定义结束时会挂上一份 **`_layers`**，类型是 **`CallbackLayers`**（不对外以公开属性名暴露，仅供库内部与扩展实现使用）。**对外**前、后两层请用类方法装饰器 **`@子类.before`**、**`@子类.after`**（其语义与 **`register_before` / `register_after`** 相同）；**中间**仍用 **`@子类`** 或 **`register`**。基类 **Callback** 不挂容器，只供继承。
 
-`CallbackLayers` 上只有三个对外属性，对应三层：
-
-| 属性 | 含义 |
-|------|------|
-| **`layers.before`** | 前层 |
-| **`layers.middle`** | 中间层 |
-| **`layers.after`** | 后层 |
-
-每一层都是一个 **`LayerTier`**：可以 **`tier.register(函数)`**，也可以 **`@子类.layers.before`** 这种把 `tier` 当装饰器。子类之间**各自一份** `layers`，不会跟父类共用一张表。
+`CallbackLayers` 内部对三层有 **`before` / `middle` / `after`** 的 **`LayerTier`** 引用；**每一层**都可以 **`LayerTier.register(函数)`** 或把 **`LayerTier` 当装饰器用**。子类之间**各自一份** `_layers`，不会与父类共用。
 
 ### 处理函数三层：和装饰器 / `register*` 的对应关系
 
-| 阶段 | 装饰器 | 直接操作 `layers` | 类方法 |
-|------|--------|-------------------|--------|
-| 前 | `@类名.before` | `@类名.layers.before` 或 `类名.layers.before.register(fn)` | `类名.register_before(fn)` |
-| 中间 | `@类名` | `@类名.layers.middle` 或 `类名.layers.middle.register(fn)` | `类名.register(fn)` |
-| 后 | `@类名.after` | `@类名.layers.after` 或 `类名.layers.after.register(fn)` | `类名.register_after(fn)` |
+| 阶段 | 推荐装饰器 | 类方法 |
+|------|------------|--------|
+| 前 | **`@类名.before`** | `类名.register_before(fn)` |
+| 中间 | **`@类名`**（或 middle 的等价登记） | `类名.register(fn)` |
+| 后 | **`@类名.after`** | `类名.register_after(fn)` |
 
 中间这一层和以前「直接 `@类名`」是同一回事。函数照样可以**带**这次的数据参数，也可以**不带**。
 
@@ -101,5 +93,6 @@ paid = OrderPaid(order_id="x", total=1)
 ### `get_all`、`register*` 与清空登记
 
 - **`get_all`**：列出 **Callback 的直接子类**（儿子辈）。孙子类、更下面的子类**不会**出现在这个列表里。
-- **`register` / `register_before` / `register_after`**：和对应 `layers` 上的 `.register` **同一套规则**（去重）。
-- 单测或进程里想**一次清空所有子类**已挂的函数：调用 **`Callback.clear_layer_registries()`**（会递归扫子类，对每个已在 `__dict__` 里创建过的 `layers` 调用 `clear()`）。
+- **`register` / `register_before` / `register_after`** 与 **`before` / `after` 装饰器**：同一套**去重**规则；装饰器在登记后仍**返回原函数**。
+- 单测或进程里想**一次清空所有子类**已挂的函数：调用 **`Callback.clear_layer_registries()`**（会递归扫子类，对每个已在 `__dict__` 里创建过的 **`_layers`** 调用 `clear()`）。
+

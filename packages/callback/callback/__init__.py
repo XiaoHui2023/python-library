@@ -9,7 +9,7 @@ from typing import Any, ClassVar, TypeVar, get_origin
 from pydantic import BaseModel, ConfigDict
 from pydantic._internal._model_construction import ModelMetaclass
 
-from callback.registry import CallbackLayers, LayerTier
+from callback.registry import CallbackLayers
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T", bound="Callback")
@@ -62,21 +62,20 @@ class CallbackMeta(ModelMetaclass):
 class Callback(BaseModel, metaclass=CallbackMeta):
     """带分层登记的载荷模型：注解字段描述一次调用的数据，监听者按前中后三层登记在类型上并顺序触发。
 
-    子类在创建时会把三层入口显式绑到对应的登记对象上，阅读类定义即可看到分层能力从哪来。
-    推荐少写方法名：`@子类` 等价于向中间层登记；`子类(...)` 等价于同步触发并返回管线结束后的同一条实例。
+    基类仅作字段形态与类方法协议的公共入口，不挂载分层登记；请定义具体子类，并在子类上登记与触发。
+
+    子类在创建时会挂上私有登记容器；前、后两层的装饰器由类方法 `before` / `after` 显式提供，中间层仍可用 `@子类` 或 `register`。
+    `子类(...)` 等价于同步触发并返回管线结束后的同一条实例。
     登记可同时包含普通函数与协程（内部仍用 asyncio 调度）。
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
-        """为子类准备分层登记容器，并把前中后三段入口绑到该容器上。"""
+        """为子类准备私有分层登记容器（`_layers`）。"""
         super().__init_subclass__(**kwargs)
-        if "layers" not in cls.__dict__:
-            cls.layers = CallbackLayers()
-        cls.before = cls.layers.before
-        cls.middle = cls.layers.middle
-        cls.after = cls.layers.after
+        if "_layers" not in cls.__dict__:
+            cls._layers = CallbackLayers()
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         cls = self.__class__
@@ -104,19 +103,41 @@ class Callback(BaseModel, metaclass=CallbackMeta):
         super().__init__(**merged)
 
     @classmethod
+    def _cb_layers(cls) -> CallbackLayers:
+        """运行期子类上必有 `_layers`；基类未挂载容器时给出明确错误。"""
+        if "_layers" not in cls.__dict__:
+            name = cls.__name__
+            raise TypeError(
+                f"{name} 未挂载分层登记，请在继承 Callback 的具体子类上登记或触发，勿在 Callback 基类上调用。",
+            )
+        return cls.__dict__["_layers"]
+
+    @classmethod
+    def before(cls, func: Callable[..., Any]) -> Callable[..., Any]:
+        """前层装饰器，与 `register_before` 同一套登记与去重规则；登记后仍返回被装饰的函数。"""
+        cls._cb_layers().before.register(func)
+        return func
+
+    @classmethod
+    def after(cls, func: Callable[..., Any]) -> Callable[..., Any]:
+        """后层装饰器，与 `register_after` 同一套登记与去重规则；登记后仍返回被装饰的函数。"""
+        cls._cb_layers().after.register(func)
+        return func
+
+    @classmethod
     def register(cls, func: Callable[..., Any]) -> None:
         """向中间层登记处理函数；与仅把子类型当作装饰器使用时的语义相同。"""
-        cls.layers.middle.register(func)
+        cls._cb_layers().middle.register(func)
 
     @classmethod
     def register_before(cls, func: Callable[..., Any]) -> None:
         """向最先执行的一层登记处理函数。"""
-        cls.layers.before.register(func)
+        cls._cb_layers().before.register(func)
 
     @classmethod
     def register_after(cls, func: Callable[..., Any]) -> None:
         """向最后执行的一层登记处理函数。"""
-        cls.layers.after.register(func)
+        cls._cb_layers().after.register(func)
 
     @classmethod
     def clear_layer_registries(cls) -> None:
@@ -125,7 +146,7 @@ class Callback(BaseModel, metaclass=CallbackMeta):
         while stack:
             c = stack.pop()
             stack.extend(c.__subclasses__())
-            reg = c.__dict__.get("layers")
+            reg = c.__dict__.get("_layers")
             if reg is not None:
                 reg.clear()
 
@@ -138,7 +159,7 @@ class Callback(BaseModel, metaclass=CallbackMeta):
         try:
             self = object.__new__(cls)
             cls.__init__(self, *args, **kwargs)
-            for funcs in cls.layers.tier_lists_in_order():
+            for funcs in cls._cb_layers().tier_lists_in_order():
                 if not funcs:
                     continue
                 tasks = [cls._acall_registered(func, self) for func in funcs]
@@ -240,13 +261,6 @@ class Callback(BaseModel, metaclass=CallbackMeta):
         return list(merged.keys())
 
 
-Callback.layers = CallbackLayers()
-Callback.before = Callback.layers.before
-Callback.middle = Callback.layers.middle
-Callback.after = Callback.layers.after
-
 __all__ = [
     "Callback",
-    "CallbackLayers",
-    "LayerTier",
 ]
