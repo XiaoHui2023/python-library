@@ -6,6 +6,7 @@ import logging
 from collections.abc import Callable
 from typing import Any, ClassVar, TypeVar, get_origin
 
+import nest_asyncio
 from pydantic import BaseModel, ConfigDict
 from pydantic._internal._model_construction import ModelMetaclass
 
@@ -171,20 +172,19 @@ class Callback(BaseModel, metaclass=CallbackMeta):
 
     @classmethod
     def trigger(cls: type[T], *args: Any, **kwargs: Any) -> T:
-        """同步触发入口：当前线程无正在运行的事件循环时，内部用 asyncio.run 跑完整条管线。
+        """同步触发入口：当前线程已有运行中的事件循环时复用该循环跑完整条管线，否则临时 asyncio.run。
 
-        若已在事件循环中（例如在 async def 里），无法在此线程上阻塞式触发；请从普通同步上下文调用，
-        或另起线程并在该线程内调用 trigger。
+        在运行中的循环上阻塞到管线结束依赖 nest_asyncio 对嵌套调度的补丁；仍只暴露本同步方法，
+        不要求调用方使用 await 或其它异步入口。
         """
+        coro = cls._trigger_pipeline_async(*args, **kwargs)
         try:
-            asyncio.get_running_loop()
+            loop = asyncio.get_running_loop()
         except RuntimeError:
-            return asyncio.run(cls._trigger_pipeline_async(*args, **kwargs))
-        msg = (
-            f"已在运行中的事件循环内无法调用 {cls.__name__}.trigger()；"
-            f"请从非事件循环线程触发，或在线程中执行 {cls.__name__}.trigger(...)。"
-        )
-        raise RuntimeError(msg)
+            return asyncio.run(coro)
+
+        nest_asyncio.apply()
+        return loop.run_until_complete(coro)
 
     @staticmethod
     def _call_registered(func: Callable[..., Any], cb: Callback) -> Any:

@@ -269,14 +269,16 @@ class CallbackAsyncTests(unittest.IsolatedAsyncioTestCase):
     def tearDown(self) -> None:
         Callback.clear_layer_registries()
 
-    async def test_trigger_inside_running_loop_raises(self) -> None:
+    async def test_trigger_inside_running_loop_completes(self) -> None:
+        seen: list[str] = []
+
         @_Payload
         def _noop(cb: _Payload) -> None:
-            pass
+            seen.append("ok")
 
-        with self.assertRaises(RuntimeError) as ctx:
-            _Payload.trigger(order_id="in-loop", total=0)
-        self.assertIn("事件循环", str(ctx.exception))
+        out = _Payload.trigger(order_id="in-loop", total=0)
+        self.assertEqual(out.order_id, "in-loop")
+        self.assertEqual(seen, ["ok"])
 
 
 class CallbackSyncHandlerThreadTests(unittest.TestCase):
