@@ -14,9 +14,10 @@ from .patch_bay_listener import PatchBayListener
 
 
 class LoggingPatchBayListener(PatchBayListener):
-    """事件用人话单行输出；有彩色控制台扩展时优先用它，否则用标准库日志。
+    """把人话写到 Rich 控制台（若可用）或标准库日志，便于看清连接拓扑与消息走向。
 
-    信息级别侧重拓扑与转发结果及载荷摘要；调试级别额外打印入站与路由跳过等细节。
+    多数消息保持单行；将要主动连接的各 Jack 及其监听地址则逐行列出，避免挤成一长串。
+    信息级别侧重拓扑变化、投递结果与载荷摘要；调试级别额外覆盖入站帧与未转发条目。
     """
 
     def __init__(
@@ -54,10 +55,13 @@ class LoggingPatchBayListener(PatchBayListener):
             rich = f"[dim]📋[/] [bold]{_esc(self._label)}[/] 配置里没有 Jack。"
             _notify(self._log, plain, rich=rich if _RICH else None)
             return
-        parts_plain = [f"「{n}」@{a}" for n, a in jacks]
-        plain = f"{self._label} 将连接：{'; '.join(parts_plain)}"
-        parts_rich = [f"[bold]{_esc(n)}[/] → [cyan]{_esc(a)}[/]" for n, a in jacks]
-        rich = f"[dim]📋[/] [bold]{_esc(self._label)}[/] 将连接：  " + "  ·  ".join(parts_rich)
+        plain = "\n".join(
+            [f"{self._label} 将连接："] + [f"  「{n}」@{a}" for n, a in jacks]
+        )
+        rich = "\n".join(
+            [f"[dim]📋[/] [bold]{_esc(self._label)}[/] 将连接："]
+            + [f"  [bold]{_esc(n)}[/] → [cyan]{_esc(a)}[/]" for n, a in jacks]
+        )
         _notify(self._log, plain, rich=rich if _RICH else None)
 
     def on_jack_connected(self, jack_name: str, remote: str | None) -> None:

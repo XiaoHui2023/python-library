@@ -184,7 +184,7 @@ def _payload_for_level(b: bytes, level: ListenerLogLevel) -> str:
 
 
 def _notify(log: logging.Logger, plain: str, *, rich: str | None = None) -> None:
-    """优先走彩色控制台单行输出；不可用时退回标准库日志。
+    """优先走彩色控制台输出（可含多行）；不可用时退回标准库日志。
 
     Args:
         log: 标准库记录器，在彩色路径不可用时写入信息级别记录。
