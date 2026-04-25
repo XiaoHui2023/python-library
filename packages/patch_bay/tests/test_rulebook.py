@@ -13,12 +13,12 @@ class TestRulebook(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             p = Path(td) / "rules.json"
             p.write_text(
-                json.dumps({"r1": "True", "r2": "{packet_len} > 0"}, ensure_ascii=False),
+                json.dumps({"r1": "True", "r2": '{type} == "message"'}, ensure_ascii=False),
                 encoding="utf-8",
             )
             d = load_rulebook_from_json_file(p)
             self.assertEqual(d["r1"], "True")
-            self.assertIn("packet_len", d["r2"])
+            self.assertIn("type", d["r2"])
 
     def test_merge(self) -> None:
         self.assertEqual(

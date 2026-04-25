@@ -11,11 +11,14 @@ def apply_wire_patches(
     payload: bytes,
     steps: Sequence[tuple[str, Mapping[str, Any]]],
 ) -> tuple[bytes | None, str | None]:
-    """对根为 object 的载荷依次套用补丁；失败返回 ``(None, message)``。
+    """按连线配置依次改写数据包对象。
 
-    支持 **msgpack** 编码的字典（与 ``patch_jack`` 应用层一致），以及 **UTF-8 JSON** 对象（兼容旧用法）。
-    每个 ``steps`` 元素为 ``(补丁名, 参数名→目标值)``。某键在**当前**对象中不存在则失败（严格存在性）；
-    目标值与当前值 **Python 类型**不一致亦失败（严格类型一致）。
+    Args:
+        payload: 待转发的原始载荷。
+        steps: 按顺序应用的补丁名称与字段改写表。
+
+    Returns:
+        tuple[bytes | None, str | None]: 成功时返回改写后的载荷与 None；失败时返回 None 与原因。
     """
     if not steps:
         return payload, None

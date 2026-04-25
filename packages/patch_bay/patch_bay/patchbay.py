@@ -25,7 +25,14 @@ logger = logging.getLogger(__name__)
 
 
 def _is_expected_dial_failure(exc: BaseException) -> bool:
-    """对端未监听或暂不可达；重连时不应刷 ERROR/traceback。"""
+    """判断连接失败是否属于常见的临时不可达。
+
+    Args:
+        exc: 连接过程中捕获到的异常。
+
+    Returns:
+        bool: 属于可等待重试的连接失败时返回 True。
+    """
     if isinstance(exc, (asyncio.TimeoutError, TimeoutError, ConnectionRefusedError)):
         return True
     if isinstance(exc, ClientConnectorError):
@@ -45,7 +52,7 @@ def _is_expected_dial_failure(exc: BaseException) -> bool:
 
 
 class PatchBay:
-    """中央交换：按配置 **主动连接** 各 Jack 的 WebSocket，在 Jack 之间转发字节流。"""
+    """按配置连接接入点并在它们之间转发数据。"""
 
     def __init__(
         self,
@@ -71,7 +78,14 @@ class PatchBay:
             return self._config
 
     def apply_config(self, config: Mapping[str, Any]) -> None:
-        """用新的配置 dict 整体替换（线程安全）；运行中重连策略未实现，宜在启动前定稿。"""
+        """替换当前配置。
+
+        Args:
+            config: 新的配置映射。
+
+        Returns:
+            None: 配置会在线程安全边界内生效。
+        """
         cfg = patch_bay_config_from_dict(dict(config))
         loop = self._loop
         if loop is None:
@@ -85,7 +99,11 @@ class PatchBay:
             self._routing = RoutingTable.from_config(cfg)
 
     async def serve(self) -> None:
-        """为每个 Jack 启动出站连接任务，直到 ``aclose()``。"""
+        """启动交换实例并持续运行。
+
+        Returns:
+            None: 直到关闭信号到达后返回。
+        """
         self._aclose_done = False
         self._loop = asyncio.get_running_loop()
         self._shutdown.clear()
@@ -100,7 +118,11 @@ class PatchBay:
         await self._shutdown.wait()
 
     async def run(self) -> None:
-        """等价于 ``serve()``：阻塞直至 ``aclose()`` 或信号 / 取消。"""
+        """运行交换实例并处理进程级停止信号。
+
+        Returns:
+            None: 停止后会完成资源清理。
+        """
         loop = asyncio.get_running_loop()
         handlers: list[int] = []
 
@@ -127,7 +149,11 @@ class PatchBay:
             await self.aclose()
 
     async def aclose(self) -> None:
-        """停止出站任务并关闭会话。"""
+        """停止交换实例并释放连接资源。
+
+        Returns:
+            None: 可重复调用，后续调用不再执行清理。
+        """
         if self._aclose_done:
             return
         self._aclose_done = True

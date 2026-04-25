@@ -64,7 +64,6 @@ class TestRouting(unittest.TestCase):
         self.assertEqual(w[0].expression, "True")
 
     def test_same_from_multiple_wires_order(self) -> None:
-        """同一 from 多条线按 YAML 顺序进入 RoutingTable。"""
         cfg = patch_bay_config_from_dict(
             {
                 "jacks": [

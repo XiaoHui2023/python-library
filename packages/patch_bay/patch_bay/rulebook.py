@@ -5,7 +5,17 @@ from pathlib import Path
 
 
 def load_rulebook_from_json_file(path: str | Path) -> dict[str, str]:
-    """从独立 JSON 文件加载规则：键为 rule_id，值为 express_evaluator 表达式字符串。"""
+    """从独立 JSON 文件加载规则表。
+
+    Args:
+        path: 规则表 JSON 文件路径。
+
+    Returns:
+        dict[str, str]: 规则 id 到表达式字符串的映射。
+
+    Raises:
+        TypeError: JSON 根结构或键值类型不符合规则表要求。
+    """
     p = Path(path)
     raw = p.read_text(encoding="utf-8")
     data = json.loads(raw)
@@ -22,7 +32,14 @@ def load_rulebook_from_json_file(path: str | Path) -> dict[str, str]:
 
 
 def merge_rulebook(*parts: dict[str, str]) -> dict[str, str]:
-    """合并多段规则表，后者覆盖同名键。"""
+    """合并多段规则表。
+
+    Args:
+        *parts: 按优先级从低到高排列的规则表。
+
+    Returns:
+        dict[str, str]: 合并后的规则表；后出现的同名规则覆盖先出现的规则。
+    """
     merged: dict[str, str] = {}
     for d in parts:
         merged.update(d)

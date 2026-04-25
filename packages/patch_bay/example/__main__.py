@@ -20,7 +20,11 @@ async def _run_pb(pb) -> None:
 
 
 async def demo() -> None:
-    """两 Jack 先在本机监听，PatchBay 按配置主动连上后路由互通。"""
+    """运行两个接入点之间的最小转发演示。
+
+    Returns:
+        None: 演示发送并接收一条消息后完成清理。
+    """
     from patch_bay import LoggingPatchBayListener, PatchBay
     from patch_jack import Jack, LoggingJackListener
 

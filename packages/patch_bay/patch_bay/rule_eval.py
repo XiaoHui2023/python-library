@@ -12,7 +12,16 @@ logger = logging.getLogger(__name__)
 
 
 def rule_allows(expression: str, packet: bytes, evaluator: Evaluator) -> bool:
-    """条件为真则放行；求值异常或结果为假则吞包。"""
+    """判断数据包是否满足连线上的条件表达式。
+
+    Args:
+        expression: 配置中声明的条件表达式。
+        packet: 传输中收到的原始载荷。
+        evaluator: 负责执行表达式的求值器。
+
+    Returns:
+        bool: 表达式结果为真时返回 True；求值失败或结果为假时返回 False。
+    """
     data: dict[str, Any] = build_packet_eval_scope(packet)
     try:
         out = evaluator.evaluate(expression, data)

@@ -23,7 +23,7 @@ except ImportError:
             s: 原始文本。
 
         Returns:
-            转义后可安全拼接进普通日志的字符串。
+            str: 转义后可安全拼接进普通日志的字符串。
         """
         return s.replace("[", "\\[")
 
@@ -40,7 +40,7 @@ def _esc(s: object) -> str:
         s: 日志中要内嵌展示的值。
 
     Returns:
-        经彩色扩展或回退规则转义后的字符串。
+        str: 经彩色扩展或回退规则转义后的字符串。
     """
     return _escape_markup(str(s))
 
@@ -52,7 +52,7 @@ def _single_line_for_log(s: str) -> str:
         s: 可能含换行的文本。
 
     Returns:
-        折叠空白后的单行字符串。
+        str: 折叠空白后的单行字符串。
     """
     return re.sub(r"[\r\n]+", " ↵ ", s).strip()
 
@@ -64,7 +64,7 @@ def _is_mostly_printable_text(s: str) -> bool:
         s: 已按 UTF-8 解码的候选文本。
 
     Returns:
-        若可打印字符占比足够高则为真。
+        bool: 可打印字符占比足够高时返回 True。
     """
 
     if "\x00" in s:
@@ -91,7 +91,7 @@ def _payload_preview(
         max_hex_bytes: 十六进制展示时最多展示的字节数。
 
     Returns:
-        适合插入单行日志的人类可读摘要。
+        str: 适合插入单行日志的人类可读摘要。
     """
     if not b:
         return "（空）"
@@ -139,7 +139,7 @@ def _payload_preview_full(b: bytes) -> str:
         b: 原始二进制载荷。
 
     Returns:
-        可能多行的展示文本。
+        str: 可能多行的展示文本。
     """
     if not b:
         return "（空）"
@@ -176,7 +176,7 @@ def _payload_for_level(b: bytes, level: ListenerLogLevel) -> str:
         level: 信息或调试。
 
     Returns:
-        对应级别的可读文本。
+        str: 对应级别的可读文本。
     """
     if level == "debug":
         return _payload_preview_full(b)
@@ -192,7 +192,7 @@ def _notify(log: logging.Logger, plain: str, *, rich: str | None = None) -> None
         rich: 可选的带标记彩色文本；为空时只走纯文本路径。
 
     Returns:
-        无。
+        None: 输出完成后返回。
     """
     if _RICH and _console is not None and rich:
         try:

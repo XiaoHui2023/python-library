@@ -14,7 +14,17 @@ def emit_listeners(
     *args: Any,
     **kwargs: Any,
 ) -> None:
-    """调用每个 listener 上名为 ``method`` 的可调用（若存在且可调用）。"""
+    """向所有监听器广播一个运行事件。
+
+    Args:
+        listeners: 已注册的监听器列表。
+        method: 要调用的监听器方法名。
+        *args: 传给监听器方法的位置参数。
+        **kwargs: 传给监听器方法的关键字参数。
+
+    Returns:
+        None: 监听器异常会被记录，不会中断后续监听器。
+    """
     for lst in listeners:
         fn = getattr(lst, method, None)
         if not callable(fn):

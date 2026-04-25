@@ -18,13 +18,13 @@ def _strip_nonempty_str(v: Any, *, field: str) -> str:
 
 
 class JackEntry(BaseModel):
-    """配置里声明的一个 Jack：``name`` 供连线复用；``address`` 为该机 **监听** 的 ``host:port``（PatchBay 主动连此地址）。"""
+    """配置中的一个接入点，供连线引用与投递定位。"""
 
     model_config = ConfigDict(extra="forbid")
 
-    name: str = Field(description="全局唯一名称，供 wires 引用")
+    name: str = Field(description="接入点名称，供连线引用；列表内唯一")
     address: str = Field(
-        description="Jack 的 WebSocket 监听地址 host:port；在 jacks 中唯一",
+        description="接入点地址，写成 host:port；列表内唯一",
     )
 
     @field_validator("name", mode="before")
@@ -41,25 +41,22 @@ class JackEntry(BaseModel):
 
 
 class Wire(BaseModel):
-    """有向连线：源 name → 目标 name，命中规则表达式时才转发。
+    """配置中的一条有向连线。
 
-    同一 ``from_jack`` 可有多条 ``Wire``：按配置中的顺序依次尝试，每条线独立匹配规则并投递；
-    对端未连上会单独产生 ``on_route_skipped(..., reason=offline)``，不影响其它线。
-    ``patchs`` 非空时：规则通过后按顺序套用补丁，再编码发出；缺键或目标值类型与当前值不一致则失败，
-    ``on_route_skipped(..., reason=patch)``。
+    同一来源可以配置多条出线；每条线独立判断条件并按顺序套用补丁。
     """
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
-    from_jack: str = Field(alias="from", description="源 Jack 的 name")
-    to_jack: str = Field(alias="to", description="目标 Jack 的 name")
+    from_jack: str = Field(alias="from", description="源接入点名称")
+    to_jack: str = Field(alias="to", description="目标接入点名称")
     rule: str | None = Field(
         default=None,
-        description="规则 id，对应 PatchBayConfig.rules；省略则恒为真、直接通行",
+        description="规则 id，对应 rules；省略则恒为真",
     )
     patchs: list[str] = Field(
         default_factory=list,
-        description="要应用的补丁名列表（引用顶层 patchs），按顺序套用；空表示不改写载荷",
+        description="要应用的补丁名列表，按顺序套用；空表示不改写数据",
     )
 
     @field_validator("from_jack", "to_jack", mode="before")
@@ -83,13 +80,13 @@ class Wire(BaseModel):
 
 
 class PatchEntry(BaseModel):
-    """具名载荷补丁：``patch`` 为顶层字段名到目标值的映射。"""
+    """配置中的一条具名数据补丁。"""
 
     model_config = ConfigDict(extra="forbid")
 
-    name: str = Field(description="补丁名，供 wires.patchs 引用")
+    name: str = Field(description="补丁名称，供 wires.patchs 引用")
     patch: dict[str, Any] = Field(
-        description="顶层键 → 改写后的值；键须已存在，且目标值类型须与当前值一致",
+        description="字段改写表；字段必须已存在，且目标值类型必须与原值一致",
     )
 
     @field_validator("name", mode="before")
@@ -114,11 +111,11 @@ class PatchEntry(BaseModel):
 
 
 class PatchBayConfig(BaseModel):
-    """PatchBay 根配置：Jack 列表、连线、规则表；可选监听地址。"""
+    """PatchBay 的完整配置模型。"""
 
     model_config = ConfigDict(extra="forbid")
 
-    jacks: list[JackEntry] = Field(description="Jack 清单（name + TCP 远端 host:port）")
+    jacks: list[JackEntry] = Field(description="接入点清单")
     wires: list[Wire] = Field(description="连线；rule 可省略表示恒为真")
     patchs: list[PatchEntry] = Field(
         default_factory=list,
@@ -126,13 +123,13 @@ class PatchBayConfig(BaseModel):
     )
     rules: dict[str, str] = Field(
         default_factory=dict,
-        description="rule_id → 条件表达式（express_evaluator）",
+        description="规则 id 到条件表达式的映射",
     )
     listen: int = Field(
         default=8765,
         ge=0,
         le=65535,
-        description="PatchBay 监听端口；绑定地址固定为 0.0.0.0",
+        description="保留端口配置，常规配置可省略",
     )
 
     @field_validator("listen", mode="before")
@@ -187,7 +184,7 @@ class PatchBayConfig(BaseModel):
 
 
 class ResolvedWire:
-    """运行期解析后的一条线（含表达式正文）。"""
+    """运行期可直接使用的连线。"""
 
     __slots__ = ("from_jack", "to_jack", "expression", "patch_steps")
 
@@ -206,7 +203,7 @@ class ResolvedWire:
 
 
 class RoutingTable:
-    """按源 Jack 名称索引连线，转发前对每条候选线按数据包求值。"""
+    """按来源索引候选连线，供转发时快速查找。"""
 
     __slots__ = ("_by_from_jack",)
 
@@ -243,7 +240,11 @@ class RoutingTable:
         yield from self._by_from_jack.get(from_jack, ())
 
     def to_mapping(self) -> list[dict[str, Any]]:
-        """拓扑快照：每条连线一行。"""
+        """生成当前拓扑快照。
+
+        Returns:
+            list[dict[str, Any]]: 每条连线一行的可序列化结构。
+        """
         rows: list[dict[str, Any]] = []
         for fj, rules in sorted(self._by_from_jack.items()):
             for w in rules:
@@ -261,7 +262,17 @@ class RoutingTable:
 
 
 def patch_bay_config_from_dict(data: Mapping[str, Any]) -> PatchBayConfig:
-    """从内存 dict 构造配置。"""
+    """从内存映射构造配置模型。
+
+    Args:
+        data: 用户或调用方提供的配置映射。
+
+    Returns:
+        PatchBayConfig: 校验后的配置模型。
+
+    Raises:
+        TypeError: 配置根结构不是字典时抛出。
+    """
     if not isinstance(data, dict):
         raise TypeError("config must be a dict")
     return PatchBayConfig.model_validate(data)

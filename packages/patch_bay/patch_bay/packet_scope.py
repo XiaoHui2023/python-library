@@ -5,23 +5,19 @@ from typing import Any
 
 
 def build_packet_eval_scope(packet: bytes) -> dict[str, Any]:
-    """express_evaluator 求值上下文：以传输中的数据包为核心。
+    """构造面向规则表达式的数据包字段上下文。
 
-    提供 `packet`（bytes）、`packet_type`、`packet_len`；若 UTF-8 JSON 可解析则提供 `json` 与 `data`（dict 时）。
+    Args:
+        packet: 传输中收到的原始载荷。
+
+    Returns:
+        dict[str, Any]: JSON 对象的顶层字段；不可解析或根不是对象时返回空字典。
     """
-    scope: dict[str, Any] = {
-        "packet": packet,
-        "packet_type": type(packet).__name__,
-        "packet_len": len(packet),
-    }
-    scope["json"] = None
-    scope["data"] = None
     try:
         text = packet.decode("utf-8")
         obj = json.loads(text)
-        scope["json"] = obj
         if isinstance(obj, dict):
-            scope["data"] = obj
+            return obj
     except Exception:
         pass
-    return scope
+    return {}

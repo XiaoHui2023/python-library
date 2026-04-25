@@ -32,7 +32,7 @@ def encode_frame(frame: Frame) -> bytes:
         frame: 待发送的协议帧。
 
     Returns:
-        可放入长连接二进制消息体的字节串。
+        bytes: 可放入长连接二进制消息体的字节串。
     """
     data = frame.model_dump(mode="python", exclude_none=True)
     return msgpack.packb(data, use_bin_type=True)
@@ -45,7 +45,7 @@ def decode_frame(raw: bytes) -> Frame:
         raw: 线上收到的二进制载荷。
 
     Returns:
-        校验后的帧模型。
+        Frame: 校验后的帧模型。
 
     Raises:
         ValueError: 根结构不是键值映射、无法对应帧模型时。
@@ -63,6 +63,6 @@ def error_frame(message: str) -> Frame:
         message: 给人看的简短错误说明。
 
     Returns:
-        语义为错误、载荷为 UTF-8 文本字节的帧实例。
+        Frame: 语义为错误、载荷为 UTF-8 文本字节的帧实例。
     """
     return Frame(kind="error", payload=message.encode("utf-8"))
