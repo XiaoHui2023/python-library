@@ -5,7 +5,7 @@ import threading
 import unittest
 from typing import ClassVar
 
-from callback import Callback
+from callback import AsyncCallback, Callback
 from callback.registry import CallbackLayers
 
 
@@ -36,9 +36,17 @@ class _Child(_Payload):
     note: str = ""
 
 
+class _AsyncPayload(AsyncCallback):
+    """异步根上的测试子类，字段形态与 _Payload 对齐。"""
+
+    order_id: str
+    total: int = 0
+
+
 class CallbackCoreTests(unittest.TestCase):
     def tearDown(self) -> None:
         Callback.clear_layer_registries()
+        AsyncCallback.clear_layer_registries()
 
     def test_trigger_returns_same_instance_handlers_mutate(self) -> None:
         @_Payload.before
@@ -223,51 +231,57 @@ class CallbackCoreTests(unittest.TestCase):
         out = _ObjCb.trigger(svc=s)
         self.assertIs(out.svc, s)
 
-    def test_async_handlers_same_layer_concurrent(self) -> None:
-        """同层 async 在 asyncio.run 的循环内并发；在无运行中事件循环的线程里调用 trigger。"""
+    def test_sync_handlers_same_layer_concurrent(self) -> None:
+        """同层多 def 在 ThreadPool 中并行，仍在 after 前收齐。"""
 
+        barrier = threading.Barrier(2)
         order: list[str] = []
-        err: list[BaseException | None] = [None]
 
-        def run_trigger() -> None:
-            try:
-                barrier = asyncio.Barrier(2)
+        def a(cb: _Payload) -> None:
+            order.append("a-enter")
+            barrier.wait()
+            order.append("a-leave")
 
-                async def a(cb: _Payload) -> None:
-                    order.append("a-enter")
-                    await barrier.wait()
-                    order.append("a-leave")
+        def b(cb: _Payload) -> None:
+            order.append("b-enter")
+            barrier.wait()
+            order.append("b-leave")
 
-                async def b(cb: _Payload) -> None:
-                    order.append("b-enter")
-                    await barrier.wait()
-                    order.append("b-leave")
+        _Payload.register(a)
+        _Payload.register(b)
 
-                _Payload.register(a)
-                _Payload.register(b)
+        @_Payload.after
+        def tail(cb: _Payload) -> None:
+            order.append("after")
 
-                @_Payload.after
-                def tail(cb: _Payload) -> None:
-                    order.append("after")
-
-                _Payload.trigger(order_id="c", total=0)
-            except BaseException as e:
-                err[0] = e
-
-        th = threading.Thread(target=run_trigger)
-        th.start()
-        th.join()
-        self.assertIsNone(err[0], msg=str(err[0]))
+        _Payload.trigger(order_id="c", total=0)
         self.assertIn("a-enter", order)
         self.assertIn("b-enter", order)
         head = order[:2]
         self.assertSetEqual(set(head), {"a-enter", "b-enter"})
         self.assertEqual(order[-1], "after")
 
+    def test_register_coroutine_on_callback_raises(self) -> None:
+        async def bad(_: _Payload) -> None:
+            pass
+
+        with self.assertRaises(TypeError) as ctx:
+            _Payload.register(bad)
+        self.assertIn("Callback", str(ctx.exception))
+
+    def test_register_def_on_async_callback_raises(self) -> None:
+        def bad(_: _AsyncPayload) -> None:
+            pass
+
+        with self.assertRaises(TypeError) as ctx:
+            _AsyncPayload.register(bad)
+        self.assertIn("AsyncCallback", str(ctx.exception))
+
 
 class CallbackAsyncTests(unittest.IsolatedAsyncioTestCase):
     def tearDown(self) -> None:
         Callback.clear_layer_registries()
+        AsyncCallback.clear_layer_registries()
 
     async def test_trigger_inside_running_loop_completes(self) -> None:
         seen: list[str] = []
@@ -280,21 +294,63 @@ class CallbackAsyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out.order_id, "in-loop")
         self.assertEqual(seen, ["ok"])
 
+    async def test_async_callback_await_trigger(self) -> None:
+        @_AsyncPayload
+        async def bump(cb: _AsyncPayload) -> None:
+            cb.total += 5
+
+        out = await _AsyncPayload.trigger(order_id="a", total=0)
+        self.assertEqual(out.order_id, "a")
+        self.assertEqual(out.total, 5)
+
+    async def test_async_callback_class_call_is_coroutine(self) -> None:
+        c = _AsyncPayload(order_id="b", total=1)
+        self.assertTrue(asyncio.iscoroutine(c))
+        out = await c
+        self.assertEqual(out.order_id, "b")
+        self.assertEqual(out.total, 1)
+
+    async def test_async_handlers_same_tier_concurrent(self) -> None:
+        order: list[str] = []
+        b = asyncio.Barrier(2)
+
+        @_AsyncPayload
+        async def a(cb: _AsyncPayload) -> None:
+            order.append("a-enter")
+            await b.wait()
+            order.append("a-leave")
+
+        @_AsyncPayload
+        async def a2(cb: _AsyncPayload) -> None:
+            order.append("b-enter")
+            await b.wait()
+            order.append("b-leave")
+
+        @_AsyncPayload.after
+        async def tail(cb: _AsyncPayload) -> None:
+            order.append("after")
+
+        await _AsyncPayload.trigger(order_id="c", total=0)
+        self.assertIn("a-enter", order)
+        self.assertIn("b-enter", order)
+        self.assertSetEqual(set(order[:2]), {"a-enter", "b-enter"})
+        self.assertEqual(order[-1], "after")
+
 
 class CallbackSyncHandlerThreadTests(unittest.TestCase):
     def tearDown(self) -> None:
         Callback.clear_layer_registries()
 
-    def test_sync_handler_runs_off_event_loop_thread(self) -> None:
+    def test_sync_single_handler_runs_on_caller_thread(self) -> None:
         main = threading.current_thread()
 
         @_Payload
         def worker(cb: _Payload) -> None:
-            cb.order_id = threading.current_thread().name
-            self.assertIsNot(threading.current_thread(), main)
+            self.assertIs(threading.current_thread(), main)
+            cb.order_id = "ok"
 
         out = _Payload.trigger(order_id="main", total=0)
-        self.assertNotEqual(out.order_id, main.name)
+        self.assertEqual(out.order_id, "ok")
 
 
 class RegistryLayerTests(unittest.TestCase):

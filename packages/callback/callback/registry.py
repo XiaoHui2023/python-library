@@ -5,7 +5,7 @@ from typing import Any
 
 
 class LayerTier:
-    """单层登记：收集可调用对象；协程与普通函数在运行期由 trigger 统一调度。"""
+    """单层登记：收集可调用对象；与哪类根、同步或异步 trigger 一起用，由子类在登记时按约定约束。"""
 
     def __init__(self, bucket: list[Callable[..., Any]]) -> None:
         self._list = bucket

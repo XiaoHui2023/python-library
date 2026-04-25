@@ -6,7 +6,7 @@ import time
 from collections.abc import Callable
 from typing import ClassVar
 
-from callback import Callback
+from callback import AsyncCallback, Callback
 
 
 class Checkout(Callback):
@@ -88,38 +88,41 @@ def demo_middle_class_call_register() -> None:
 
 
 def demo_async_same_tier() -> None:
-    """同层多个 async 在本层内并发，三层仍严格 前→中→后。"""
+    """同层多 async 在 AsyncCallback 上并发，三层仍 前→中→后。"""
 
-    class TaskBatch(Callback):
+    class TaskBatch(AsyncCallback):
         name: str
 
     trace: list[str] = []
 
-    @TaskBatch.before
-    async def b1(cb: TaskBatch) -> None:
-        await asyncio.sleep(0.02)
-        trace.append("before")
+    async def run_demo() -> None:
+        @TaskBatch.before
+        async def b1(cb: TaskBatch) -> None:
+            await asyncio.sleep(0.02)
+            trace.append("before")
 
-    @TaskBatch
-    async def m1(cb: TaskBatch) -> None:
-        await asyncio.sleep(0.02)
-        trace.append("mid1")
+        @TaskBatch
+        async def m1(cb: TaskBatch) -> None:
+            await asyncio.sleep(0.02)
+            trace.append("mid1")
 
-    @TaskBatch
-    async def m2(cb: TaskBatch) -> None:
-        await asyncio.sleep(0.02)
-        trace.append("mid2")
+        @TaskBatch
+        async def m2(cb: TaskBatch) -> None:
+            await asyncio.sleep(0.02)
+            trace.append("mid2")
 
-    @TaskBatch.after
-    def tail(cb: TaskBatch) -> None:
-        trace.append(f"after:{cb.name}")
+        @TaskBatch.after
+        async def tail(cb: TaskBatch) -> None:
+            trace.append(f"after:{cb.name}")
 
-    trace.clear()
-    t0 = time.perf_counter()
-    TaskBatch(name="job")
-    dt = time.perf_counter() - t0
-    print("--- 同层 async 并发（中层两路 sleep 叠加应明显短于 0.08s 串行）---")
-    print(f"elapsed≈{dt:.3f}s, trace:", trace)
+        trace.clear()
+        t0 = time.perf_counter()
+        await TaskBatch(name="job")
+        dt = time.perf_counter() - t0
+        print("--- 同层 async 并发（中层两路 sleep 远短于串行 0.08s）---")
+        print(f"elapsed≈{dt:.3f}s, trace:", trace)
+
+    asyncio.run(run_demo())
 
 
 def demo_callable_field_use_keyword() -> None:
