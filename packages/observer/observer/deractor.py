@@ -7,9 +7,8 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
-from .bus import ObserverBus
+from .bus import ObserverBus, _ClassT
 from .context import ObserverContext, ObserverKind, ObserverPhase
-
 
 _WRAPPED_FLAG = "__observer_bus_wrapped__"
 _SUBCLASS_HOOK_FLAG = "__observer_bus_subclass_hook_installed__"
@@ -20,8 +19,8 @@ def observe_methods(
     *,
     include_private: bool = False,
     emit_before: bool = True,
-):
-    def decorator(cls: type) -> type:
+) -> Callable[[_ClassT], _ClassT]:
+    def decorator(cls: _ClassT) -> _ClassT:
         _observe_class(
             cls,
             bus=bus,
