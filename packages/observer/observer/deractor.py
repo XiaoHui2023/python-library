@@ -5,9 +5,11 @@ import inspect
 import time
 import uuid
 from collections.abc import Callable
-from typing import Any
+from typing import Any, TypeVar
 
-from .bus import ObserverBus, _ClassT
+from .bus import ObserverBus
+
+T = TypeVar("T")
 from .context import ObserverContext, ObserverKind, ObserverPhase
 
 _WRAPPED_FLAG = "__observer_bus_wrapped__"
@@ -19,8 +21,18 @@ def observe_methods(
     *,
     include_private: bool = False,
     emit_before: bool = True,
-) -> Callable[[_ClassT], _ClassT]:
-    def decorator(cls: _ClassT) -> _ClassT:
+) -> Callable[[type[T]], type[T]]:
+    """返回类装饰器，为指定类型及其子类挂上与总线关联的方法级观测。
+
+    Args:
+        bus: 用于派发各阶段快照的总线实例。
+        include_private: 为真时下划线开头的方法也会被包装。
+        emit_before: 为真时在目标方法体执行前派发切入阶段快照。
+
+    Returns:
+        接收类型对象并原地改写其可调用成员的类装饰器。
+    """
+    def decorator(cls: type[T]) -> type[T]:
         _observe_class(
             cls,
             bus=bus,

@@ -1,59 +1,130 @@
 from __future__ import annotations
-import logging
-from typing import Any, ClassVar, TYPE_CHECKING
-from abc import ABC
-from pydantic import BaseModel, Field, ConfigDict, PrivateAttr
-from registry import Registry
+
+from typing import TYPE_CHECKING, Any, ClassVar
+
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+from observer import ObserverBus
 
 if TYPE_CHECKING:
-    from automation.hub import Hub
+    from automation.runtime.context import Context
 
-logger = logging.getLogger(__name__)
+observer_bus = ObserverBus()
 
-class BaseAutomation(BaseModel, ABC):
+
+@observer_bus.observe()
+class BaseAutomation(BaseModel):
+    """自动化对象基类，提供生命周期与运行时钩子。"""
+
     model_config = ConfigDict(validate_assignment=True)
 
-    _abstract: ClassVar[bool] = False
-    _type: ClassVar[str]
-    _registry: ClassVar[Registry]
+    registered_kind: ClassVar[str | None] = None
 
     instance_name: str = Field(..., description="实例名")
 
-    _IMMUTABLE_FIELDS: ClassVar[frozenset[str]] = frozenset({"instance_name"})
-    _hub: Hub = PrivateAttr(default=None)
+    _ctx: Context = PrivateAttr()
 
-    def __init_subclass__(cls, **kwargs):
-        super().__init_subclass__(**kwargs)
+    @property
+    def ctx(self) -> Context:
+        """当前对象绑定的运行时上下文。"""
 
-        if cls.__dict__.get("_abstract", False):
-            return
-        if not hasattr(cls, "_type") or not isinstance(getattr(cls, "_type", None), str):
-            raise TypeError(f"{cls.__name__} 必须定义 _type: ClassVar[str]")
-        cls._registry.register(cls._type, cls)
+        return self._ctx
 
-    async def on_validate(self, hub: Hub) -> None:
-        pass
+    async def build_phase(self) -> None:
+        """构建阶段：依次调用 before、主体、after。"""
 
-    async def on_activate(self, hub: Hub) -> None:
-        pass
+        await self.before_build()
+        await self.on_build()
+        await self.after_build()
 
-    async def on_update(self, hub: Hub) -> None:
-        pass
+    async def validate_phase(self) -> None:
+        """加载校验阶段：依次调用 before、主体、after。"""
 
-    async def on_start(self) -> None:
-        pass
+        await self.before_validate()
+        await self.on_validate()
+        await self.after_validate()
 
-    async def on_stop(self) -> None:
-        pass
+    async def activate_phase(self) -> None:
+        """激活阶段：依次调用 before、主体、after。"""
 
-    async def update(self, hub: Hub, new_spec: dict) -> None:
-        for key, value in new_spec.items():
-            if key in self._IMMUTABLE_FIELDS:
-                continue
-            if key in self.__class__.model_fields:
-                setattr(self, key, value)
-            else:
-                logger.warning(
-                    "%s.%s: ignoring unknown field %r",
-                    self.__class__.__name__, self.instance_name, key,
-                )
+        await self.before_activate()
+        await self.on_activate()
+        await self.after_activate()
+
+    async def inactive_phase(self) -> None:
+        """反激活阶段：依次调用 before、主体、after。"""
+
+        await self.before_inactive()
+        await self.on_inactive()
+        await self.after_inactive()
+
+    async def run_phase(self, *, closing: bool = False) -> None:
+        """运行阶段：依次调用 before、主体、after。
+
+        Args:
+            closing: 为 True 时表示运行期收尾（对应原停机路径），默认可视为进入运行期。
+        """
+
+        await self.before_run(closing=closing)
+        await self.on_run(closing=closing)
+        await self.after_run(closing=closing)
+
+    async def before_build(self) -> None:
+        """构建主体之前。"""
+
+    async def on_build(self) -> None:
+        """根据已绑定配置与上下文完成运行时结构初始化。"""
+
+    async def after_build(self) -> None:
+        """构建主体之后。"""
+
+    async def before_validate(self) -> None:
+        """加载校验主体之前。"""
+
+    async def on_validate(self) -> None:
+        """验证本对象在已绑定运行时环境中的配置与引用关系。"""
+
+    async def after_validate(self) -> None:
+        """加载校验主体之后。"""
+
+    async def before_activate(self) -> None:
+        """激活主体之前。"""
+
+    async def on_activate(self) -> None:
+        """激活阶段：注册回调、启动调度等。"""
+
+    async def after_activate(self) -> None:
+        """激活主体之后。"""
+
+    async def before_inactive(self) -> None:
+        """反激活主体之前。"""
+
+    async def on_inactive(self) -> None:
+        """反激活阶段：与激活阶段对称，撤销登记与钩子（重载或停机前）。"""
+
+    async def after_inactive(self) -> None:
+        """反激活主体之后。"""
+
+    async def before_run(self, *, closing: bool = False) -> None:
+        """运行主体之前；closing 为 True 时表示收尾语义。"""
+
+    async def on_run(self, *, closing: bool = False) -> None:
+        """运行期主体；closing 为 True 时表示收尾语义。"""
+
+    async def after_run(self, *, closing: bool = False) -> None:
+        """运行主体之后；closing 为 True 时表示收尾语义。"""
+
+
+def registered_kind_for(cls: type[Any]) -> str | None:
+    """沿 MRO 查找已登记的注册键。
+
+    Args:
+        cls: 模型类。
+
+    Returns:
+        可选字符串: 在继承链上找到已设置的注册键则返回，否则为空。
+    """
+    for c in cls.__mro__:
+        kind = getattr(c, "registered_kind", None)
+        if kind is not None:
+            return kind
+    return None

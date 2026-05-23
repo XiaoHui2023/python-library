@@ -15,12 +15,17 @@ class LoadErrorCode(StrEnum):
     INVALID_CONFIG = "invalid_config"
     MISSING_ACTIONS = "missing_actions"
     INVALID_ACTION_SPEC = "invalid_action_spec"
+    BUILD_FAILED = "build_failed"
     VALIDATION_FAILED = "validation_failed"
     ACTIVATION_FAILED = "activation_failed"
 
 
-class ConfigLoadError(ValueError):
-    """配置加载异常，携带完整上下文"""
+class AutomationLoadError(ValueError):
+    """自动化加载异常，携带完整上下文"""
+
+
+class ConfigLoadError(AutomationLoadError):
+    """兼容旧名；新代码请使用 AutomationLoadError。"""
 
     def __init__(
         self,

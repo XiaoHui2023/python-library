@@ -11,7 +11,7 @@ from typing import Any, TypeVar
 from .context import ObserverContext
 
 
-_ClassT = TypeVar("_ClassT", bound=type[Any])
+T = TypeVar("T")
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,17 @@ ObserverCallback = Callable[[ObserverContext], object]
 
 
 class ObserverBus:
+    """承载订阅、派发与收尾观测总线。
+
+    在独立线程池中执行同步回调，在自建事件循环线程上调度协程回调；与业务线程解耦。
+    """
+
     def __init__(self, *, max_workers: int | None = None) -> None:
+        """创建总线并启动后台执行设施。
+
+        Args:
+            max_workers: 同步回调所用线程池的最大工作线程数；未指定时由标准库采用默认策略。
+        """
         self._callbacks: list[tuple[ObserverCallback, dict[str, Any]]] = []
         self._pending: set[concurrent.futures.Future[Any]] = set()
         self._lock = RLock()
@@ -47,6 +57,19 @@ class ObserverBus:
         callback: ObserverCallback,
         **filters: Any,
     ) -> ObserverCallback:
+        """注册监听，在派发上下文与附带条件一致时触发。
+
+        Args:
+            callback: 同步函数、协程函数，或协程可调用实例；入参为当前派发快照。
+            **filters: 与快照各槽位逐项相等的匹配条件；留空表示每次派发都考虑该回调。
+
+        Returns:
+            传入的监听对象，便于链式注册或稍后取消订阅。
+
+        Raises:
+            RuntimeError: 总线已关闭后仍尝试注册。
+            ValueError: 匹配条件里出现了快照中不存在的字段名。
+        """
         self._validate_filters(filters)
 
         with self._lock:
@@ -62,6 +85,11 @@ class ObserverBus:
         return callback
 
     def unsubscribe(self, callback: ObserverCallback) -> None:
+        """按对象身份移除此前注册过的监听，与注册时使用的过滤条件无关。
+
+        Args:
+            callback: 与订阅时传入的同一可调用对象。
+        """
         with self._lock:
             self._callbacks = [
                 (registered_callback, registered_filters)
@@ -70,6 +98,17 @@ class ObserverBus:
             ]
 
     def callback(self, **filters: Any):
+        """返回用于声明式注册监听的装饰器工厂。
+
+        Args:
+            **filters: 与订阅接口相同的匹配条件；非法字段名在装饰器应用时即校验。
+
+        Returns:
+            接收可调用对象并完成注册的装饰器。
+
+        Raises:
+            ValueError: 匹配条件里出现了快照中不存在的字段名。
+        """
         self._validate_filters(filters)
 
         def decorator(fn: ObserverCallback) -> ObserverCallback:
@@ -78,6 +117,11 @@ class ObserverBus:
         return decorator
 
     def emit(self, ctx: ObserverContext) -> None:
+        """向当前所有监听异步投递一份上下文快照；总线已关闭时静默忽略。
+
+        Args:
+            ctx: 本次派发携带的快照，监听侧按匹配条件决定是否执行。
+        """
         with self._lock:
             if self._closed:
                 return
@@ -93,7 +137,16 @@ class ObserverBus:
         *,
         include_private: bool = False,
         emit_before: bool = True,
-    ) -> Callable[[_ClassT], _ClassT]:
+    ) -> Callable[[type[T]], type[T]]:
+        """返回类装饰器，为被装饰类的方法挂上与当前总线关联的观测包装。
+
+        Args:
+            include_private: 为真时下划线开头的方法也会被包装。
+            emit_before: 为真时在目标方法体执行前额外派发切入阶段快照。
+
+        Returns:
+            接收类型对象并原地改写其可调用成员的类装饰器。
+        """
         from .deractor import observe_methods
 
         return observe_methods(
@@ -103,6 +156,12 @@ class ObserverBus:
         )
 
     def close(self, *, wait: bool = True, timeout: float | None = None) -> None:
+        """停止接受新订阅并尽量结束在途回调。
+
+        Args:
+            wait: 为真时先等待已提交任务结束再关停执行设施。
+            timeout: 等待在途同步任务或后台线程结束的上限秒数；与标准库等待语义一致。
+        """
         with self._lock:
             if self._closed:
                 return
@@ -121,9 +180,17 @@ class ObserverBus:
         self._loop_thread.join(join_timeout)
 
     def __enter__(self) -> ObserverBus:
+        """进入上下文管理作用域时返回自身。"""
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
+        """离开上下文管理作用域时按同步等待策略关闭总线。
+
+        Args:
+            exc_type: 离开作用域时未处理异常的型别；无异常时为 None。
+            exc: 异常实例或 None。
+            tb: 对应回溯或 None。
+        """
         self.close(wait=True)
 
     def _submit_callback(self, callback: ObserverCallback, ctx: ObserverContext) -> None:

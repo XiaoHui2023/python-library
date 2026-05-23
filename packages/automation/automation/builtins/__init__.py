@@ -3,7 +3,7 @@ import pkgutil
 from pathlib import Path
 
 def _auto_import():
-    """自动导入 builtins 下所有子模块，触发类的注册"""
+    """自动导入 builtins 下所有子模块，完成事件等内置类型的模块级登记。"""
     package_dir = Path(__file__).resolve().parent
     for sub_pkg in package_dir.iterdir():
         if not sub_pkg.is_dir() or sub_pkg.name.startswith("_"):

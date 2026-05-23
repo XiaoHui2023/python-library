@@ -1,59 +1,83 @@
 from __future__ import annotations
-from typing import Any, Callable, ClassVar, TYPE_CHECKING
 
-import logging
-from .base import BaseAutomation
-from registry import Registry
-import inspect
 import asyncio
-from pydantic import Field, PrivateAttr
-from .event_context import EventContext
+import inspect
+import logging
+from typing import Any
 
-if TYPE_CHECKING:
-    from automation.hub import Hub
+from pydantic import BaseModel, Field
+from automation.listener.events import EventFired
+
+from .base import BaseAutomation
 
 logger = logging.getLogger(__name__)
-NAME_SPACE = "event"
 
-event_registry = Registry(NAME_SPACE)
+
+class EventContext(BaseModel):
+    """事件触发时的上下文。"""
+
+    event_name: str = Field(description="当前自动化事件实例名，用于分发与条件求值")
+    data: dict[str, Any] = Field(
+        default_factory=dict,
+        description="并入条件表达式与回调的扁平键值",
+    )
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.data.get(key, default)
 
 
 class Event(BaseAutomation):
-    _abstract: ClassVar[bool] = True
-    _registry: ClassVar[Registry] = event_registry
+    """自动化事件：满足条件后依次调用已注册的回调。
+
+    具体触发路径由 builtins 中的派生类型补充。
+    """
 
     conditions: list[str] = Field(
         default_factory=list,
         description="条件表达式列表，全部满足才触发事件",
     )
 
-    _on_fire: list[Callable[[], Any]] = PrivateAttr(default_factory=list)
-    _on_error: Callable[[Exception], Any] | None = PrivateAttr(default=None)
-
-    async def on_validate(self, hub: Hub) -> None:
+    async def on_validate(self) -> None:
         for expr in self.conditions:
-            hub.renderer.validate_expr(expr)
+            self._ctx.create_renderer()(expr)
 
-    async def fire(self, context: EventContext | None = None):
-        if context is None:
-            context = EventContext(event_name=self.instance_name)
+    async def on_activate(self) -> None:
+        self._ctx.ensure_observer_global_after()
+
+    async def fire(
+        self,
+        data: dict[str, Any] | EventContext | None = None,
+    ) -> None:
+        """按条件触发监听；本次附加数据由参数直接给出。
+
+        Args:
+            data: 并入条件与回调的键值，或已是事件上下文；省略表示无附加数据。
+        """
+
+        if isinstance(data, EventContext):
+            context = data.model_copy(update={"event_name": self.instance_name})
+        elif data is not None:
+            context = EventContext(event_name=self.instance_name, data=dict(data))
+        else:
+            context = EventContext(event_name=self.instance_name, data={})
 
         if self.conditions:
-            renderer = self._hub.renderer.derive(
-                "event", "local", context.data
-            )
+            renderer = self._ctx.create_renderer().derive(context.data)
             for expr in self.conditions:
-                if not renderer.eval_bool(expr):
+                if not bool(renderer(expr)):
                     return
-        
-        self._hub.notify("on_event_fired", self.instance_name)
-        
-        tasks = []
-        for callback in self._on_fire:
+
+        self._ctx.emit(
+            EventFired(self.instance_name, data=dict(context.data))
+        )
+
+        handlers = self._ctx.get_event_fire_handlers(self.instance_name)
+        tasks: list[Any] = []
+        for callback in handlers:
             try:
-                result = callback(context)    # ← 传入 context
+                result = callback(context)
             except Exception as e:
-                await self._handle_error(e)
+                logger.error("Event callback failed: %s", e, exc_info=True)
                 continue
             if inspect.isawaitable(result):
                 tasks.append(result)
@@ -61,27 +85,12 @@ class Event(BaseAutomation):
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for result in results:
                 if isinstance(result, Exception):
-                    await self._handle_error(result)
+                    logger.error(
+                        "Event async callback failed: %s", result, exc_info=result
+                    )
 
-    async def _handle_error(self, error: Exception) -> None:
-        logger.error("Event callback failed: %s", error, exc_info=error)
-        if self._on_error is not None:
-            try:
-                err_result = self._on_error(error)
-                if inspect.isawaitable(err_result):
-                    await err_result
-            except Exception:
-                logger.exception("Error handler raised an exception")
 
-    def set_error_handler(self, handler: Callable[[Exception], Any] | None) -> None:
-        self._on_error = handler
-
-    def add_listener(self, callback: Callable[[], Any]) -> None:
-        if callback not in self._on_fire:
-            self._on_fire.append(callback)
-
-    def remove_listener(self, callback: Callable[[], Any]) -> None:
-        try:
-            self._on_fire.remove(callback)
-        except ValueError:
-            pass
+__all__ = [
+    "Event",
+    "EventContext",
+]

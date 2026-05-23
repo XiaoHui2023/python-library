@@ -1,25 +1,58 @@
-from .core import (
+from automation import assistant
+from automation.assistant import (
+    add_listener,
+    configure_listeners,
+    context,
+    entities,
+    events,
+    load_script_file,
+    reload_automation,
+    run,
+    section,
+    start,
+    stop,
+    triggers,
+)
+from automation.core import (
     Action,
     Entity,
-    Trigger,
     Event,
+    Trigger,
+    action_registry,
+    catalog_registry,
+    entity_registry,
+    event_registry,
+    instantiate_registered,
+    registered_kind_for,
+    trigger_registry,
 )
-from .assistant import Assistant
-from .listeners import BaseListener, ConsoleListener, TraceListener, TypeSchemaListener, InstanceSchemaListener
-from .renderer import Renderer
-
-from . import builtins  # noqa: F401  触发自动注册
+from automation.runtime import Context, get_context
 
 __all__ = [
     "Action",
     "Entity",
-    "Trigger",
     "Event",
-    "Assistant",
-    "BaseListener",
-    "ConsoleListener",
-    "TraceListener",
-    "TypeSchemaListener",
-    "InstanceSchemaListener",
-    "Renderer",
+    "Trigger",
+    "Context",
+    "assistant",
+    "add_listener",
+    "configure_listeners",
+    "context",
+    "entities",
+    "events",
+    "triggers",
+    "section",
+    "get_context",
+    "load_script_file",
+    "reload_automation",
+    "run",
+    "start",
+    "stop",
+    "catalog_registry",
+    "action_registry",
+    "entity_registry",
+    "event_registry",
+    "trigger_registry",
+    "instantiate_registered",
+    "registered_kind_for",
 ]
