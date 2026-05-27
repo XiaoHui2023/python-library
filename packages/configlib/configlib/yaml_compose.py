@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import copy
 import re
+from collections.abc import Callable
+from pathlib import Path
 from typing import Any, Literal
 
 SPREAD_KEY = "__configlib_spread__"
 MERGES_KEY = "__configlib_merges__"
+INCLUDES_KEY = "__configlib_includes__"
 
 _BARE_VAR_LINE = re.compile(r"^(\s*)(\$\{[^{}]+\})\s*(#.*)?$")
-_RESERVED_KEYS = frozenset({SPREAD_KEY, MERGES_KEY})
+_BARE_INCLUDE_LINE = re.compile(r"^(\s*)!include\s+(\S+)\s*(#.*)?$")
+_RESERVED_KEYS = frozenset({SPREAD_KEY, MERGES_KEY, INCLUDES_KEY})
 
 
 def preprocess_yaml_compose(source: str) -> str:
@@ -55,6 +59,55 @@ def preprocess_yaml_compose(source: str) -> str:
     if source.endswith("\n") and out and not out[-1].endswith("\n"):
         out[-1] = out[-1] + "\n"
     return "".join(out)
+
+
+def preprocess_yaml_includes(source: str) -> str:
+    """将块式 YAML 中独占一行的 !include 改写成可解析的占位结构。"""
+    if not source:
+        return source
+    lines = source.splitlines(keepends=True)
+    if not lines:
+        return source
+
+    infos = [_include_line_info(line) for line in lines]
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        info = infos[i]
+        if not info.is_bare_include:
+            out.append(lines[i])
+            i += 1
+            continue
+
+        parent_indent = _parent_indent_includes(infos, i)
+        block_end = _block_end_index_includes(infos, i, parent_indent)
+        block = infos[i:block_end]
+        include_paths = [entry.include_path for entry in block if entry.is_bare_include]
+        if include_paths:
+            base_indent = block[0].indent_str
+            out.append(f"{base_indent}{INCLUDES_KEY}:\n")
+            for rel_path in include_paths:
+                out.append(f"{base_indent}  - {rel_path}\n")
+        i = block_end
+
+    if source.endswith("\n") and out and not out[-1].endswith("\n"):
+        out[-1] = out[-1] + "\n"
+    return "".join(out)
+
+
+def apply_includes(
+    data: Any,
+    base_dir: Path,
+    loader: Callable[[str], Any],
+) -> Any:
+    """按占位列表加载并深合并多个 !include 源。"""
+    if isinstance(data, dict):
+        return _apply_includes_mapping(data, base_dir, loader)
+    if isinstance(data, list):
+        return [
+            apply_includes(item, base_dir, loader) for item in data
+        ]
+    return data
 
 
 def apply_composition(data: Any) -> Any:
@@ -209,9 +262,106 @@ def _compose_sequence(data: list[Any]) -> list[Any]:
     return result
 
 
+class _IncludeLineInfo:
+    __slots__ = (
+        "indent",
+        "indent_str",
+        "is_bare_include",
+        "include_path",
+        "is_mapping_entry",
+        "is_blank",
+    )
+
+    def __init__(self, line: str) -> None:
+        stripped = line.lstrip(" \t")
+        self.indent = len(line) - len(stripped)
+        self.indent_str = line[: self.indent]
+        self.is_blank = not stripped or stripped.startswith("#")
+        self.is_mapping_entry = (
+            not self.is_blank
+            and not stripped.startswith("- ")
+            and ":" in stripped
+            and not stripped.startswith("!include")
+        )
+        match = _BARE_INCLUDE_LINE.match(stripped)
+        self.is_bare_include = match is not None and not self.is_blank
+        self.include_path = match.group(2) if match else ""
+
+
+def _include_line_info(line: str) -> _IncludeLineInfo:
+    return _IncludeLineInfo(line)
+
+
+def _parent_indent_includes(infos: list[_IncludeLineInfo], index: int) -> int:
+    indent = infos[index].indent
+    for pos in range(index - 1, -1, -1):
+        info = infos[pos]
+        if info.is_blank:
+            continue
+        if info.indent < indent:
+            return info.indent
+    return -1
+
+
+def _block_end_index_includes(
+    infos: list[_IncludeLineInfo],
+    start: int,
+    parent_indent: int,
+) -> int:
+    indent = infos[start].indent
+    pos = start
+    while pos < len(infos):
+        info = infos[pos]
+        if not info.is_blank and info.indent < indent and pos > start:
+            break
+        if not info.is_blank and info.indent == indent:
+            if pos > start and not info.is_bare_include:
+                break
+        if not info.is_blank and info.indent > indent:
+            pos += 1
+            continue
+        pos += 1
+    return pos
+
+
+def _apply_includes_mapping(
+    data: dict[str, Any],
+    base_dir: Path,
+    loader: Callable[[str], Any],
+) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    include_sources: list[dict[str, Any]] = []
+
+    for key, value in data.items():
+        if key == INCLUDES_KEY:
+            if not isinstance(value, list):
+                raise TypeError(f"{INCLUDES_KEY} 必须是列表")
+            for rel_path in value:
+                if not isinstance(rel_path, str):
+                    raise TypeError(f"{INCLUDES_KEY} 每一项必须是路径字符串")
+                target = (base_dir / rel_path).resolve()
+                loaded = loader(str(target))
+                if not isinstance(loaded, dict):
+                    raise TypeError(
+                        f"!include 深合并要求 {rel_path!r} 解析为字典，"
+                        f"实际为 {type(loaded).__name__}"
+                    )
+                include_sources.append(apply_includes(loaded, target.parent, loader))
+            continue
+        merged[key] = apply_includes(value, base_dir, loader)
+
+    result: dict[str, Any] = {}
+    for source in include_sources:
+        result = _deep_merge_dict(result, source)
+    return _deep_merge_dict(result, merged)
+
+
 __all__ = [
     "SPREAD_KEY",
     "MERGES_KEY",
+    "INCLUDES_KEY",
     "preprocess_yaml_compose",
+    "preprocess_yaml_includes",
+    "apply_includes",
     "apply_composition",
 ]

@@ -42,6 +42,29 @@ items:
   - !include item.yaml
 ```
 
+### 多文件深合并
+
+独占一行的 `!include`（无 `-`、无 `key:` 前缀）在同级存在其它 mapping 键时，会把各文件内容按字典深合并进当前位置；多个连续 `!include` 先彼此合并，再与同级本地键合并（本地键覆盖引用）。根文件也可先写 `!include` 再写顶层键，效果等同于合并进根 mapping。
+
+```yaml
+!include spec.yaml
+
+class_prefix: CLock_
+trees:
+  - name: orion
+  - nodes: ${vars.nodes}
+```
+
+```yaml
+# spec.yaml
+vars:
+  nodes:
+    !include b.json
+    !include c.yaml
+```
+
+`b.json` 与 `c.yaml` 均为字典时，`vars.nodes` 为二者深合并结果；`${vars.nodes}` 再引用该合并后的子树。
+
 ### 列表展开
 
 `${shared}` 独占一行并且同级存在 `-` 项时，引用结果会展开进当前列表。引用值必须是列表。

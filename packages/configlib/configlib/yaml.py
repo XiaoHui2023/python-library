@@ -6,7 +6,12 @@ from pathlib import Path
 from typing import Any
 import yaml
 from .resolver import resolve_variables
-from .yaml_compose import apply_composition, preprocess_yaml_compose
+from .yaml_compose import (
+    apply_composition,
+    apply_includes,
+    preprocess_yaml_compose,
+    preprocess_yaml_includes,
+)
 
 SUFFIXES = {".yaml", ".yml"}
 _YAML_LOAD_STACK: ContextVar[list[Path] | None] = ContextVar("_YAML_LOAD_STACK", default=None)
@@ -67,7 +72,11 @@ def _load_yaml_raw(path: Path) -> Any:
 
     text = path.read_text(encoding="utf-8")
     text = preprocess_yaml_compose(text)
-    return yaml.load(text, Loader=_YamlIncludeLoader)
+    text = preprocess_yaml_includes(text)
+    data = yaml.load(text, Loader=_YamlIncludeLoader)
+    from . import load_config_raw
+
+    return apply_includes(data, path.parent, load_config_raw)
 
 
 __all__ = ["is_yaml", "load_yaml", "load_yaml_raw"]
