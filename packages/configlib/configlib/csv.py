@@ -39,23 +39,30 @@ def _parse_csv_text(text: str, *, source: str) -> dict | list:
     if not rows:
         raise ValueError(f"CSV 文件无有效内容: {source}")
 
+    width = len(rows[0])
+    if width < 2:
+        raise ValueError(
+            f"CSV 至少需要 2 列，实际 {width} 列: {source}"
+        )
+
+    for index, row in enumerate(rows, start=1):
+        if len(row) != width:
+            raise ValueError(
+                f"CSV 第 {index} 行列数为 {len(row)}，"
+                f"与首行 {width} 列不一致: {source}"
+            )
+
+    if width == 2:
+        data_rows = rows
+        if _header_matches_key_value(rows[0]):
+            data_rows = rows[1:]
+        return _parse_key_value_table(data_rows, source=source)
+
     header = rows[0]
     data_rows = rows[1:]
 
-    if len(header) < 2:
-        raise ValueError(
-            f"CSV 至少需要 2 列，实际 {len(header)} 列: {source}"
-        )
-
     if any(not name for name in header):
         raise ValueError(f"CSV 表头存在空列名: {source}")
-
-    if _is_key_value_header(header):
-        if len(header) != 2:
-            raise ValueError(
-                f"键值表仅允许 key、value 两列，实际 {len(header)} 列: {source}"
-            )
-        return _parse_key_value_table(data_rows, source=source)
 
     return _parse_record_table(header, data_rows, source=source)
 
@@ -65,10 +72,6 @@ def _header_matches_key_value(header: list[str]) -> bool:
         header[0].lower() == _KEY_VALUE_HEADERS[0]
         and header[1].lower() == _KEY_VALUE_HEADERS[1]
     )
-
-
-def _is_key_value_header(header: list[str]) -> bool:
-    return _header_matches_key_value(header)
 
 
 def _parse_key_value_table(

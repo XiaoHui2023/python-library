@@ -27,47 +27,7 @@
 - `.yaml`
 - `.yml`
 
-### 导入
-
-```yaml
-root: !include app.yaml
-
-app:
-  base: !include base.yaml
-  json_data: !include data.json5
-  toml_data: !include data.toml
-  csv_data: !include data.csv
-
-items:
-  - !include item.yaml
-```
-
-### 多文件深合并
-
-独占一行的 `!include`（无 `-`、无 `key:` 前缀）在同级存在其它 mapping 键时，会把各文件内容按字典深合并进当前位置；多个连续 `!include` 先彼此合并，再与同级本地键合并（本地键覆盖引用）。根文件也可先写 `!include` 再写顶层键，效果等同于合并进根 mapping。
-
-```yaml
-!include spec.yaml
-
-class_prefix: CLock_
-trees:
-  - name: orion
-  - nodes: ${vars.nodes}
-```
-
-```yaml
-# spec.yaml
-vars:
-  nodes:
-    !include b.json
-    !include c.yaml
-```
-
-`b.json` 与 `c.yaml` 均为字典时，`vars.nodes` 为二者深合并结果；`${vars.nodes}` 再引用该合并后的子树。
-
-### 列表展开
-
-`${shared}` 独占一行并且同级存在 `-` 项时，引用结果会展开进当前列表。引用值必须是列表。
+### 列表合并
 
 ```yaml
 shared: [a, b]
@@ -84,9 +44,7 @@ items:
 {"items": ["head", "a", "b", "tail"]}
 ```
 
-### Mapping 合并
-
-`${base}` 独占一行并且同级存在普通键时，会把引用到的 mapping 合并进当前位置。同名字段双方都是 mapping 时继续合并，否则本地值覆盖引用值。
+### 字典合并
 
 ```yaml
 base:
@@ -115,6 +73,22 @@ app:
 }
 ```
 
+### 导入
+
+```yaml
+a: !include 1.yaml 2.json 3.toml 4.csv # 多个按顺序导入
+
+app:
+  base: !include base.yaml # 作为base键对应的值导入
+  !include other_dict.yml # 作为另一个dict合并到app，属于字典合并
+
+items:
+  - !include item.yaml # 作为一个元素
+  !include other_list.json # 作为另一个list合并到items，属于列表合并
+```
+
+多文件导入用于`list`和`dict`合并，合并进去的文件内容也必须是`list`或`dict`
+
 ## TOML
 
 支持的后缀：
@@ -131,10 +105,7 @@ CSV 只支持两种形态：
 
 ### 键值表
 
-表头为 `key,value`，且文件只有这两列时，读取结果是 `dict`。表头大小写不影响判断。
-
 ```csv
-key,value
 host,127.0.0.1
 port,5432
 ```
@@ -146,8 +117,6 @@ port,5432
 ```
 
 ### 记录表
-
-其它合法多列表头会读取成 `list[dict]`。
 
 ```csv
 name,host,port

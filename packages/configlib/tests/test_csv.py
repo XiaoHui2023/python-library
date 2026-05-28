@@ -31,18 +31,18 @@ class CsvHelpersTests(unittest.TestCase):
                 ],
             )
 
-    def test_two_column_record_table_not_key_value(self) -> None:
+    def test_two_column_key_value_table(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "pairs.csv"
             path.write_text(
-                "name,enabled\n"
-                "a,true\n",
+                "host,127.0.0.1\n"
+                "port,5432\n",
                 encoding="utf-8",
             )
             data = load_csv_raw(str(path))
-            self.assertEqual(data, [{"name": "a", "enabled": "true"}])
+            self.assertEqual(data, {"host": "127.0.0.1", "port": "5432"})
 
-    def test_key_value_table_case_insensitive_header(self) -> None:
+    def test_key_value_table_legacy_header_skipped(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "cfg.csv"
             path.write_text(
@@ -63,14 +63,13 @@ class CsvHelpersTests(unittest.TestCase):
     def test_record_table_empty_data_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "rules.csv"
-            path.write_text("name,enabled\n", encoding="utf-8")
+            path.write_text("name,enabled,threshold\n", encoding="utf-8")
             self.assertEqual(load_csv_raw(str(path)), [])
 
     def test_load_config_dispatches_csv(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "cfg.csv"
             path.write_text(
-                "key,value\n"
                 "label,${name}\n"
                 "name,demo\n",
                 encoding="utf-8",
@@ -88,7 +87,6 @@ class CsvHelpersTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "cfg.csv"
             path.write_text(
-                "key,value\n"
                 "host,127.0.0.1\n"
                 "port,8080\n",
                 encoding="utf-8",
@@ -121,15 +119,15 @@ class CsvInvalidFormatTests(unittest.TestCase):
                 "1,2,3\n",
                 encoding="utf-8",
             )
-            with self.assertRaisesRegex(ValueError, "与表头"):
+            with self.assertRaisesRegex(ValueError, "与首行"):
                 load_csv_raw(str(path))
 
     def test_duplicate_column_in_record_table(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "bad.csv"
             path.write_text(
-                "name,name\n"
-                "x,y\n",
+                "name,name,extra\n"
+                "x,y,z\n",
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(ValueError, "重复列名"):
@@ -139,7 +137,6 @@ class CsvInvalidFormatTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "bad.csv"
             path.write_text(
-                "key,value\n"
                 "host,a\n"
                 "host,b\n",
                 encoding="utf-8",
@@ -151,30 +148,32 @@ class CsvInvalidFormatTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "bad.csv"
             path.write_text(
-                "key,value\n"
                 ",x\n",
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(ValueError, "key 为空"):
                 load_csv_raw(str(path))
 
-    def test_key_value_with_extra_column(self) -> None:
+    def test_three_column_record_table(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "bad.csv"
+            path = Path(tmp) / "rules.csv"
             path.write_text(
                 "key,value,extra\n"
                 "a,b,c\n",
                 encoding="utf-8",
             )
-            with self.assertRaisesRegex(ValueError, "仅允许 key、value 两列"):
-                load_csv_raw(str(path))
+            data = load_csv_raw(str(path))
+            self.assertEqual(
+                data,
+                [{"key": "a", "value": "b", "extra": "c"}],
+            )
 
     def test_empty_header_cell(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "bad.csv"
             path.write_text(
-                "name,\n"
-                "a,b\n",
+                "name,,extra\n"
+                "a,b,c\n",
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(ValueError, "空列名"):
@@ -189,8 +188,8 @@ class CsvInvalidFormatTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "rules.csv"
             path.write_text(
-                "name,enabled\n"
-                "a,true\n",
+                "name,enabled,threshold\n"
+                "a,true,10\n",
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(TypeError, "配置顶层必须是 dict"):
