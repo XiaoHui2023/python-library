@@ -4,13 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "python-library-automation"
-version = "0.3.0"
+version = "1.0.0"
 requires-python = ">=3.10"
 dependencies = [
-    "python-library-registry",
-    "python-library-reactive-model",
-    "python-library-observer",
-    "python-library-express-evaluator",
+    "pydantic",
 ]
 
 [tool.hatch.build.targets.wheel]

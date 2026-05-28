@@ -1,58 +1,9 @@
-from automation import assistant
-from automation.assistant import (
-    add_listener,
-    configure_listeners,
-    context,
-    entities,
-    events,
-    load_script_file,
-    reload_automation,
-    run,
-    section,
-    start,
-    stop,
-    triggers,
-)
-from automation.core import (
-    Action,
-    Entity,
-    Event,
-    Trigger,
-    action_registry,
-    catalog_registry,
-    entity_registry,
-    event_registry,
-    instantiate_registered,
-    registered_kind_for,
-    trigger_registry,
-)
-from automation.runtime import Context, get_context
+from automation.automation import Automation
+from automation.runtime import run, start, stop
 
 __all__ = [
-    "Action",
-    "Entity",
-    "Event",
-    "Trigger",
-    "Context",
-    "assistant",
-    "add_listener",
-    "configure_listeners",
-    "context",
-    "entities",
-    "events",
-    "triggers",
-    "section",
-    "get_context",
-    "load_script_file",
-    "reload_automation",
+    "Automation",
     "run",
     "start",
     "stop",
-    "catalog_registry",
-    "action_registry",
-    "entity_registry",
-    "event_registry",
-    "trigger_registry",
-    "instantiate_registered",
-    "registered_kind_for",
 ]
