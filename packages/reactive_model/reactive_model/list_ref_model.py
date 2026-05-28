@@ -96,5 +96,4 @@ class ListRefModel(RefModel[list[T]]):
 
     @value.setter
     def value(self, value: list[T]) -> None:
-        self._value = value
-        self.touch()
+        self._assign_value(value)

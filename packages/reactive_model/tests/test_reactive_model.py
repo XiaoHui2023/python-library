@@ -19,6 +19,27 @@ class TestRefModel(unittest.TestCase):
         r.value = 1
         self.assertGreater(r.version, v0)
 
+    def test_on_change_decorator(self) -> None:
+        r = RefModel(10)
+        seen: list[tuple[int, int]] = []
+
+        @r.on_change
+        def handler(new: int, old: int) -> None:
+            seen.append((new, old))
+
+        r.value = 20
+        self.assertEqual(seen, [(20, 10)])
+
+    def test_on_change_not_called_on_init(self) -> None:
+        seen: list[tuple[int, int]] = []
+        r = RefModel(1)
+
+        @r.on_change
+        def handler(new: int, old: int) -> None:
+            seen.append((new, old))
+
+        self.assertEqual(seen, [])
+
 
 class TestComputedModel(unittest.TestCase):
     def test_lazy_and_cache(self) -> None:
@@ -90,6 +111,19 @@ class TestDictRefModel(unittest.TestCase):
         d.value = {"b": 2}
         self.assertEqual(keys.value, ["b"])
 
+    def test_on_change_on_replace(self) -> None:
+        d = DictRefModel({"a": 1})
+        seen: list[tuple[dict[str, int], dict[str, int]]] = []
+
+        @d.on_change
+        def handler(new: dict[str, int], old: dict[str, int]) -> None:
+            seen.append((new, old))
+
+        d.value = {"b": 2}
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(seen[0][0], {"b": 2})
+        self.assertEqual(seen[0][1], {"a": 1})
+
 
 class TestListRefModel(unittest.TestCase):
     def test_proxy_mutation_invalidates_computed(self) -> None:
@@ -105,6 +139,19 @@ class TestListRefModel(unittest.TestCase):
         self.assertEqual(length.value, 1)
         lst.value = [1, 2, 3]
         self.assertEqual(length.value, 3)
+
+    def test_on_change_on_replace(self) -> None:
+        lst = ListRefModel([1])
+        seen: list[tuple[list[int], list[int]]] = []
+
+        @lst.on_change
+        def handler(new: list[int], old: list[int]) -> None:
+            seen.append((new, old))
+
+        lst.value = [1, 2, 3]
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(seen[0][0], [1, 2, 3])
+        self.assertEqual(seen[0][1], [1])
 
 
 if __name__ == "__main__":

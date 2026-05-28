@@ -98,5 +98,4 @@ class DictRefModel(RefModel[dict[K, V]]):
 
     @value.setter
     def value(self, value: dict[K, V]) -> None:
-        self._value = value
-        self.touch()
+        self._assign_value(value)
