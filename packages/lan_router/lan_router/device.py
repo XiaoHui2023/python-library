@@ -9,3 +9,5 @@ class Device(BaseModel):
     """设备MAC地址"""
     type: str
     """设备类型"""
+    active: bool = True
+    """路由器报告的在线状态；未返回在线字段时视为在线"""

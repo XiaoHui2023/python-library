@@ -10,9 +10,16 @@ class LanRouterTests(unittest.TestCase):
         self.assertIn("不支持", str(ctx.exception))
 
     def test_device_model(self) -> None:
-        d = Device(name="n", ip="192.168.0.1", mac="00:00:00:00:00:01", type="wifi")
+        d = Device(
+            name="n",
+            ip="192.168.0.1",
+            mac="00:00:00:00:00:01",
+            type="wifi",
+            active=False,
+        )
         self.assertEqual(d.name, "n")
         self.assertEqual(d.ip, "192.168.0.1")
+        self.assertFalse(d.active)
 
 
 if __name__ == "__main__":
