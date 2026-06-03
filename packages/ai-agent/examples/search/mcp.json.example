@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "bocha_search": {
+      "command": "<tools-bocha_search-venv-python>",
+      "args": ["-m", "mcp_tool_bocha_search"],
+      "cwd": "<tools-bocha_search-root>",
+      "env": {
+        "BOCHA_API_KEY": "<your-bocha-api-key>",
+        "LLM_API_KEY": "<bocha-summarize-llm-api-key>",
+        "LLM_BASE_URL": "<bocha-summarize-llm-base-url>",
+        "LLM_MODEL": "<bocha-summarize-llm-model>",
+        "BOCHA_FETCH_TIMEOUT": "3",
+        "BOCHA_MAX_WORKERS": "10",
+        "BOCHA_MAX_CHARS": "10000"
+      }
+    }
+  }
+}

@@ -1,0 +1,6 @@
+# 示例本地密钥（*.example 为模板，可提交）
+examples/**/.env
+!examples/**/.env.example
+examples/**/mcp.json
+!examples/**/mcp.json.example
+examples/**/.sandbox/
