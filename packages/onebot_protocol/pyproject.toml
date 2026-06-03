@@ -1,0 +1,16 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "python-library-onebot-protocol"
+version = "0.1.0"
+description = "OneBot 风格消息载荷与消息段模型"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.0,<3",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["onebot_protocol"]
