@@ -6,8 +6,14 @@ dist/
 build/
 .venv/
 .env
-# ai-agent 示例：仅 mcp.json / .env 含密钥；*.example 可提交
-packages/ai-agent/examples/**/mcp.json
+.env.*
+!.env.example
+# packages 示例本地密钥（*.example 为模板，可提交）
+packages/**/examples/**/.env
+!packages/**/examples/**/.env.example
+packages/**/examples/**/mcp.json
+!packages/**/examples/**/mcp.json.example
+packages/**/examples/**/.sandbox/
 .pytest_cache/
 config.yaml
 logs/
