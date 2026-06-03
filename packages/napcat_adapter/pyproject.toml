@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "python-library-napcat-adapter"
+version = "0.1.0"
+description = "NapCat CQ 消息段与 OneBot 载荷互转及接入"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.0,<3",
+    "napcat-sdk",
+    "python-library-onebot-protocol",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["napcat_adapter"]
