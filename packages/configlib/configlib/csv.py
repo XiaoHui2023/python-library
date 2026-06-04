@@ -8,24 +8,22 @@ from .resolver import resolve_variables
 
 SUFFIXES = {".csv"}
 
-_KEY_VALUE_HEADERS = ("key", "value")
-
 
 def is_csv(file_path: str) -> bool:
     return os.path.splitext(file_path)[1] in SUFFIXES
 
 
-def load_csv(file_path: str) -> dict | list:
+def load_csv(file_path: str) -> list[dict[str, str]]:
     data = load_csv_raw(file_path)
     return resolve_variables(data)
 
 
-def load_csv_raw(file_path: str) -> dict | list:
+def load_csv_raw(file_path: str) -> list[dict[str, str]]:
     text = Path(file_path).read_text(encoding="utf-8-sig")
     return _parse_csv_text(text, source=file_path)
 
 
-def _parse_csv_text(text: str, *, source: str) -> dict | list:
+def _parse_csv_text(text: str, *, source: str) -> list[dict[str, str]]:
     if not text.strip():
         raise ValueError(f"CSV 文件为空: {source}")
 
@@ -52,12 +50,6 @@ def _parse_csv_text(text: str, *, source: str) -> dict | list:
                 f"与首行 {width} 列不一致: {source}"
             )
 
-    if width == 2:
-        data_rows = rows
-        if _header_matches_key_value(rows[0]):
-            data_rows = rows[1:]
-        return _parse_key_value_table(data_rows, source=source)
-
     header = rows[0]
     data_rows = rows[1:]
 
@@ -65,31 +57,6 @@ def _parse_csv_text(text: str, *, source: str) -> dict | list:
         raise ValueError(f"CSV 表头存在空列名: {source}")
 
     return _parse_record_table(header, data_rows, source=source)
-
-
-def _header_matches_key_value(header: list[str]) -> bool:
-    return (
-        header[0].lower() == _KEY_VALUE_HEADERS[0]
-        and header[1].lower() == _KEY_VALUE_HEADERS[1]
-    )
-
-
-def _parse_key_value_table(
-    data_rows: list[list[str]],
-    *,
-    source: str,
-) -> dict:
-    result: dict[str, str] = {}
-    for line_no, row in _enumerate_data_rows(data_rows, source=source, width=2):
-        key, value = row
-        if not key:
-            raise ValueError(f"CSV 键值表第 {line_no} 行 key 为空: {source}")
-        if key in result:
-            raise ValueError(
-                f"CSV 键值表存在重复键 {key!r}（第 {line_no} 行）: {source}"
-            )
-        result[key] = value
-    return result
 
 
 def _parse_record_table(
@@ -106,7 +73,7 @@ def _parse_record_table(
 
     width = len(header)
     records: list[dict[str, str]] = []
-    for line_no, row in _enumerate_data_rows(data_rows, source=source, width=width):
+    for _, row in _enumerate_data_rows(data_rows, source=source, width=width):
         records.append(dict(zip(header, row, strict=True)))
     return records
 

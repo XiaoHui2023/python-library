@@ -46,30 +46,34 @@ items:
 
 ### 字典合并
 
-```yaml
-base:
-  db:
-    host: 127.0.0.1
-    port: 5432
-  debug: false
+假如有以下变量
 
-app:
-  ${base}
-  db:
-    port: 15432
+```yaml
+var:
+  a:
+    name: "name is a"
+    age: 99
 ```
 
-读取结果：
+将 `var` 的内容嵌入其他字典里，并重载 `a.age`。由于是`深合并`，只覆盖最底层的键。
+
+```yaml
+root:
+  ${var}
+  a:
+    age: -1
+```
+
+`root` 的结果为：
 
 ```python
 {
-    "app": {
-        "db": {
-            "host": "127.0.0.1",
-            "port": 15432,
-        },
-        "debug": False,
-    }
+  "root": {
+      "a": {
+          "name": "name is a",
+          "age": -1
+      }
+  }
 }
 ```
 
@@ -87,7 +91,7 @@ items:
   !include other_list.json # 作为另一个list合并到items，属于列表合并
 ```
 
-多文件导入用于`list`和`dict`合并，合并进去的文件内容也必须是`list`或`dict`
+多文件导入用于`list`和`dict`合并，合并进去的文件内容也必须是`list`或`dict`。
 
 ## TOML
 
@@ -101,22 +105,7 @@ items:
 
 - `.csv`
 
-CSV 只支持两种形态：
-
-### 键值表
-
-```csv
-host,127.0.0.1
-port,5432
-```
-
-读取结果：
-
-```python
-{"host": "127.0.0.1", "port": "5432"}
-```
-
-### 记录表
+首行为表头，表示键。其余每行表示对应的值：
 
 ```csv
 name,host,port

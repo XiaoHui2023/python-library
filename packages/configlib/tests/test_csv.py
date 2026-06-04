@@ -31,34 +31,19 @@ class CsvHelpersTests(unittest.TestCase):
                 ],
             )
 
-    def test_two_column_key_value_table(self) -> None:
+    def test_two_column_record_table(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "pairs.csv"
             path.write_text(
-                "host,127.0.0.1\n"
-                "port,5432\n",
+                "host,port\n"
+                "127.0.0.1,5432\n",
                 encoding="utf-8",
             )
             data = load_csv_raw(str(path))
-            self.assertEqual(data, {"host": "127.0.0.1", "port": "5432"})
-
-    def test_key_value_table_legacy_header_skipped(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "cfg.csv"
-            path.write_text(
-                "Key,Value\n"
-                "host,localhost\n"
-                "port,8000\n",
-                encoding="utf-8",
+            self.assertEqual(
+                data,
+                [{"host": "127.0.0.1", "port": "5432"}],
             )
-            data = load_csv_raw(str(path))
-            self.assertEqual(data, {"host": "localhost", "port": "8000"})
-
-    def test_key_value_empty_data_rows(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "cfg.csv"
-            path.write_text("key,value\n", encoding="utf-8")
-            self.assertEqual(load_csv_raw(str(path)), {})
 
     def test_record_table_empty_data_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -70,30 +55,22 @@ class CsvHelpersTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "cfg.csv"
             path.write_text(
-                "label,${name}\n"
-                "name,demo\n",
+                "name,label\n"
+                "demo,${..name}\n",
                 encoding="utf-8",
             )
-            self.assertEqual(load_config(path)["label"], "demo")
-            self.assertEqual(load_config_raw(path)["label"], "${name}")
+            self.assertEqual(load_config(path)[0]["label"], "demo")
+            self.assertEqual(load_config_raw(path)[0]["label"], "${..name}")
 
-    def test_config_loader_accepts_key_value_csv(self) -> None:
-        from configlib import ConfigLoader
-
-        class Cfg(ConfigLoader):
-            host: str = ""
-            port: str = ""
-
+    def test_load_csv_resolves_variables(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "cfg.csv"
             path.write_text(
-                "host,127.0.0.1\n"
-                "port,8080\n",
+                "name,label\n"
+                "demo,${..name}\n",
                 encoding="utf-8",
             )
-            obj = Cfg.from_file(path)
-            self.assertEqual(obj.host, "127.0.0.1")
-            self.assertEqual(obj.port, "8080")
+            self.assertEqual(load_csv(str(path))[0]["label"], "demo")
 
 
 class CsvInvalidFormatTests(unittest.TestCase):
@@ -131,27 +108,6 @@ class CsvInvalidFormatTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(ValueError, "重复列名"):
-                load_csv_raw(str(path))
-
-    def test_duplicate_key_in_key_value_table(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "bad.csv"
-            path.write_text(
-                "host,a\n"
-                "host,b\n",
-                encoding="utf-8",
-            )
-            with self.assertRaisesRegex(ValueError, "重复键"):
-                load_csv_raw(str(path))
-
-    def test_empty_key_in_key_value_table(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "bad.csv"
-            path.write_text(
-                ",x\n",
-                encoding="utf-8",
-            )
-            with self.assertRaisesRegex(ValueError, "key 为空"):
                 load_csv_raw(str(path))
 
     def test_three_column_record_table(self) -> None:
