@@ -118,6 +118,6 @@ backup,127.0.0.2,5433
 ```python
 [
     {"name": "main", "host": "127.0.0.1", "port": "5432"},
-    {"name": "backup", "host": "127.0.0.2", "port": "5433"},
+    {"name": "backup", "host": "127.0.0.2", "port": "5433"}
 ]
 ```
