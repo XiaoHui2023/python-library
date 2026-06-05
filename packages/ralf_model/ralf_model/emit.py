@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ralf_model.nodes import BlockNode, FieldNode, RalfDocument, RegisterNode
+from ralf_model.nodes import BlockNode, FieldNode, RalfDocument, RegisterNode, SystemNode
 
 
 def _fmt_at_int(v: int) -> str:
@@ -58,6 +58,35 @@ def _emit_block_open_line(b: BlockNode, indent: str) -> str:
     return line
 
 
+def _emit_system_open_line(s: SystemNode, indent: str) -> str:
+    line = f"{indent}system {s.name}"
+    if s.rhs_head is not None:
+        line += f" = {s.rhs_head}"
+        if s.rhs_paren_path is not None:
+            line += f" ({s.rhs_paren_path})"
+        if s.base_address is not None:
+            line += f" @{_fmt_at_int(s.base_address)}"
+    elif s.base_address is not None:
+        line += f" @{_fmt_at_int(s.base_address)}"
+    return line
+
+
+def _emit_system(s: SystemNode, indent: str) -> list[str]:
+    head_line = _emit_system_open_line(s, indent)
+    if not s.has_body:
+        return [f"{head_line};"]
+    lines = [head_line + " {"]
+    inner = indent + "  "
+    if s.bytes_width is not None:
+        lines.append(f"{inner}bytes {s.bytes_width};")
+    for sub in s.systems:
+        lines.extend(_emit_system(sub, inner))
+    for sub in s.blocks:
+        lines.extend(_emit_block(sub, inner))
+    lines.append(indent + "}")
+    return lines
+
+
 def _emit_block(b: BlockNode, indent: str) -> list[str]:
     head_line = _emit_block_open_line(b, indent)
     if not b.has_body:
@@ -77,8 +106,15 @@ def _emit_block(b: BlockNode, indent: str) -> list[str]:
 def dump_ralf(doc: RalfDocument) -> str:
     """将 `RalfDocument` 序列化为 RALF 源文本（规范化排版）。"""
     out: list[str] = []
-    for i, b in enumerate(doc.blocks):
-        if i:
+    first = True
+    for s in doc.systems:
+        if not first:
             out.append("")
+        first = False
+        out.extend(_emit_system(s, ""))
+    for b in doc.blocks:
+        if not first:
+            out.append("")
+        first = False
         out.extend(_emit_block(b, ""))
     return "\n".join(out) + ("\n" if out else "")

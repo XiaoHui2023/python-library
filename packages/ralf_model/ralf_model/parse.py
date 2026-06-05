@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from ralf_model.errors import RalfParseError
-from ralf_model.nodes import BlockNode, FieldNode, RalfDocument, RegisterNode
+from ralf_model.nodes import BlockNode, FieldNode, RalfDocument, RegisterNode, SystemNode
 
 
 class _Parser:
@@ -39,11 +39,22 @@ class _Parser:
         j = self._i + offset
         return self._s[j] if j < self._n else None
 
-    def _error(self, msg: str) -> None:
+    def _error_location(self) -> tuple[Path | None, int]:
         path = self._path
+        line = self.line
         if self._line_sources and 0 < self.line <= len(self._line_sources):
             path = self._line_sources[self.line - 1]
-        raise RalfParseError(msg, line=self.line, col=self.col, path=path)
+            local = 1
+            idx = self.line - 2
+            while idx >= 0 and self._line_sources[idx] == path:
+                local += 1
+                idx -= 1
+            line = local
+        return path, line
+
+    def _error(self, msg: str) -> None:
+        path, line = self._error_location()
+        raise RalfParseError(msg, line=line, col=self.col, path=path)
 
     def skip_ws_and_comments(self) -> None:
         while self._i < self._n:
@@ -168,16 +179,19 @@ class _Parser:
         self._error("期望 ;")
 
     def parse_document(self) -> RalfDocument:
+        systems: list[SystemNode] = []
         blocks: list[BlockNode] = []
         self.skip_ws_and_comments()
         while self._i < self._n:
             kw = self._peek_keyword()
-            if kw == "block":
+            if kw == "system":
+                systems.append(self.parse_system())
+            elif kw == "block":
                 blocks.append(self.parse_block())
             else:
-                self._error(f"顶层期望 block，得到 {kw!r}")
+                self._error(f"顶层期望 system 或 block，得到 {kw!r}")
             self.skip_ws_and_comments()
-        return RalfDocument(blocks=blocks)
+        return RalfDocument(systems=systems, blocks=blocks)
 
     def _peek_keyword(self) -> str:
         self.skip_ws_and_comments()
@@ -261,6 +275,106 @@ class _Parser:
             self.skip_ws_and_comments()
         return head, paren_inner, addr
 
+    def parse_system(self) -> SystemNode:
+        self.expect_keyword("system")
+        name = self.read_hierarchical_block_name()
+        self.skip_ws_and_comments()
+
+        if self._peek() == "@":
+            self._advance()
+            addr = self.parse_integer_value()
+            self.skip_ws_and_comments()
+            if self._peek() == ";":
+                self._advance()
+                return SystemNode(
+                    name=name,
+                    base_address=addr,
+                    has_body=False,
+                    systems=[],
+                    blocks=[],
+                )
+            if self._peek() == "{":
+                self._advance()
+                bw, subs_sys, subs_blk = self._parse_system_body()
+                self.expect_char("}")
+                return SystemNode(
+                    name=name,
+                    base_address=addr,
+                    has_body=True,
+                    bytes_width=bw,
+                    systems=subs_sys,
+                    blocks=subs_blk,
+                )
+            self._error("system @地址 之后应为 ; 或 {")
+
+        if self._peek() == "=":
+            self._advance()
+            self.skip_ws_and_comments()
+            rhs_head, rhs_path, addr_rhs = self.parse_block_rhs_after_equals()
+            self.skip_ws_and_comments()
+            if self._peek() == ";":
+                self._advance()
+                return SystemNode(
+                    name=name,
+                    rhs_head=rhs_head,
+                    rhs_paren_path=rhs_path,
+                    base_address=addr_rhs,
+                    has_body=False,
+                    systems=[],
+                    blocks=[],
+                )
+            if self._peek() == "{":
+                self._advance()
+                bw, subs_sys, subs_blk = self._parse_system_body()
+                self.expect_char("}")
+                return SystemNode(
+                    name=name,
+                    rhs_head=rhs_head,
+                    rhs_paren_path=rhs_path,
+                    base_address=addr_rhs,
+                    has_body=True,
+                    bytes_width=bw,
+                    systems=subs_sys,
+                    blocks=subs_blk,
+                )
+            self._error("system ... = ... 之后应为 ; 或 {")
+
+        if self._peek() == "{":
+            self._advance()
+            bw, subs_sys, subs_blk = self._parse_system_body()
+            self.expect_char("}")
+            return SystemNode(
+                name=name,
+                has_body=True,
+                bytes_width=bw,
+                systems=subs_sys,
+                blocks=subs_blk,
+            )
+        self._error("system 名称之后应为 @、= 或 {")
+
+    def _parse_system_body(
+        self,
+    ) -> tuple[int | None, list[SystemNode], list[BlockNode]]:
+        bw: int | None = None
+        subs_sys: list[SystemNode] = []
+        subs_blk: list[BlockNode] = []
+        while True:
+            self.skip_ws_and_comments()
+            if self._peek() == "}":
+                break
+            kw = self._peek_keyword()
+            if kw == "bytes":
+                self.expect_keyword("bytes")
+                bw = self.parse_integer_value()
+                self.expect_char(";")
+            elif kw == "system":
+                subs_sys.append(self.parse_system())
+            elif kw == "block":
+                subs_blk.append(self.parse_block())
+            else:
+                self._error(f"system 内出现未识别的内容 {kw!r}")
+        return bw, subs_sys, subs_blk
+
     def parse_block(self) -> BlockNode:
         self.expect_keyword("block")
         name = self.read_hierarchical_block_name()
@@ -270,14 +384,28 @@ class _Parser:
             self._advance()
             addr = self.parse_integer_value()
             self.skip_ws_and_comments()
-            self.expect_char(";")
-            return BlockNode(
-                name=name,
-                base_address=addr,
-                has_body=False,
-                registers=[],
-                blocks=[],
-            )
+            if self._peek() == ";":
+                self._advance()
+                return BlockNode(
+                    name=name,
+                    base_address=addr,
+                    has_body=False,
+                    registers=[],
+                    blocks=[],
+                )
+            if self._peek() == "{":
+                self._advance()
+                bw, regs, subs = self._parse_block_body()
+                self.expect_char("}")
+                return BlockNode(
+                    name=name,
+                    base_address=addr,
+                    has_body=True,
+                    bytes_width=bw,
+                    registers=regs,
+                    blocks=subs,
+                )
+            self._error("block @地址 之后应为 ; 或 {")
 
         if self._peek() == "=":
             self._advance()

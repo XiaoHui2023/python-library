@@ -241,6 +241,41 @@ block a {
         self.assertNotIn("//", n)
 
 
+class SystemParseTests(unittest.TestCase):
+    def test_top_system_nests_system_and_block(self) -> None:
+        src = """
+system chip {
+  system cpu @0 {
+    block core {
+      register r @0 {
+        bytes 4;
+        field f {}
+      }
+    }
+  }
+  block peri @'h1000 {
+    register s @0 {
+      bytes 1;
+      field g {}
+    }
+  }
+}
+"""
+        doc = parse_ralf(src)
+        self.assertEqual(len(doc.systems), 1)
+        chip = doc.systems[0]
+        self.assertEqual(chip.name, "chip")
+        self.assertEqual(len(chip.systems), 1)
+        self.assertEqual(chip.systems[0].name, "cpu")
+        self.assertEqual(chip.systems[0].base_address, 0)
+        self.assertEqual(chip.blocks[0].name, "peri")
+        self.assertEqual(chip.blocks[0].base_address, 0x1000)
+        core = chip.systems[0].blocks[0]
+        self.assertEqual(core.registers[0].name, "r")
+        doc2 = parse_ralf(dump_ralf(doc))
+        self.assertEqual(doc.model_dump(), doc2.model_dump())
+
+
 class ParseErrorTests(unittest.TestCase):
     def test_parse_error_includes_file_path(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -263,6 +298,23 @@ class ParseErrorTests(unittest.TestCase):
                 load_ralf_file(top)
             self.assertIn(str(broken), str(ctx.exception))
             self.assertNotIn(str(top.resolve()), str(ctx.exception))
+            self.assertEqual(ctx.exception.line, 2)
+
+    def test_parse_error_line_in_included_file_after_filler(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            inc = root / "inc"
+            inc.mkdir()
+            (inc / "broken.ralf").write_text(
+                "// line1\n// line2\nblock y {\n  ???\n}\n",
+                encoding="utf-8",
+            )
+            top = root / "top.ralf"
+            filler = "\n".join(["// filler"] * 50)
+            top.write_text(filler + '\nsource "inc/broken.ralf"\n', encoding="utf-8")
+            with self.assertRaises(RalfParseError) as ctx:
+                load_ralf_file(top)
+            self.assertEqual(ctx.exception.line, 4)
 
 
 if __name__ == "__main__":
