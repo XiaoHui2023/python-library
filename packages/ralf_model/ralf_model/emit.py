@@ -12,6 +12,8 @@ def _fmt_at_int(v: int) -> str:
 
 def _emit_field(f: FieldNode, indent: str) -> list[str]:
     head = f"{indent}field {f.name}"
+    if f.paren_path is not None:
+        head += f"({f.paren_path})"
     if f.offset_bits is not None:
         head += f" @{_fmt_at_int(f.offset_bits)}"
     head += " {"
@@ -26,6 +28,8 @@ def _emit_field(f: FieldNode, indent: str) -> list[str]:
 
 def _emit_register(r: RegisterNode, indent: str) -> list[str]:
     head = f"{indent}register {r.name}"
+    if r.paren_path is not None:
+        head += f" ({r.paren_path})"
     if r.offset_bytes is not None:
         head += f" @{_fmt_at_int(r.offset_bytes)}"
     if r.declaration_only:

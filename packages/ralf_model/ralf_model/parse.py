@@ -349,6 +349,10 @@ class _Parser:
         self.expect_keyword("register")
         name = self.read_ident()
         self.skip_ws_and_comments()
+        paren_path: str | None = None
+        if self._peek() == "(":
+            paren_path = self.read_round_paren_inner()
+            self.skip_ws_and_comments()
         offset: int | None = None
         if self._peek() == "@":
             self._advance()
@@ -358,6 +362,7 @@ class _Parser:
             self._advance()
             return RegisterNode(
                 name=name,
+                paren_path=paren_path,
                 offset_bytes=offset,
                 declaration_only=True,
             )
@@ -367,6 +372,7 @@ class _Parser:
             self.expect_char("}")
             return RegisterNode(
                 name=name,
+                paren_path=paren_path,
                 offset_bytes=offset,
                 bytes_width=rbw,
                 fields=fields,
@@ -396,6 +402,10 @@ class _Parser:
         self.expect_keyword("field")
         name = self.read_ident()
         self.skip_ws_and_comments()
+        paren_path: str | None = None
+        if self._peek() == "(":
+            paren_path = self.read_round_paren_inner()
+            self.skip_ws_and_comments()
         off_bits: int | None = None
         if self._peek() == "@":
             self._advance()
@@ -403,7 +413,9 @@ class _Parser:
         self.expect_char("{")
         fn = self._parse_field_body()
         self.expect_char("}")
-        return fn.model_copy(update={"name": name, "offset_bits": off_bits})
+        return fn.model_copy(
+            update={"name": name, "paren_path": paren_path, "offset_bits": off_bits}
+        )
 
     def _parse_field_body(self) -> FieldNode:
         inner: list[str] = []

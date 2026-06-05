@@ -9,6 +9,10 @@ class FieldNode(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
+    paren_path: str | None = Field(
+        default=None,
+        description="紧跟在 field 名后的圆括号路径内容（不含括号），如 ``field f(hdl.sig)``",
+    )
     offset_bits: int | None = Field(default=None, description="field 内 `@` 后的位偏移")
     inner_statements: list[str] = Field(
         default_factory=list,
@@ -22,6 +26,10 @@ class RegisterNode(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
+    paren_path: str | None = Field(
+        default=None,
+        description="紧跟在 register 名后的圆括号路径内容（不含括号），如 ``register r (dut.reg)``",
+    )
     offset_bytes: int | None = Field(default=None, description="register 后的 `@` 字节偏移")
     bytes_width: int | None = None
     fields: list[FieldNode] = Field(default_factory=list)

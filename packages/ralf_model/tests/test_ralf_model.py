@@ -148,6 +148,69 @@ block top {
         out = dump_ralf(doc)
         self.assertIn("register R0;", out)
 
+    def test_register_paren_path_at_offset(self) -> None:
+        src = """
+block top {
+  bytes 4;
+  register CTRL (dut.ctrl_reg) @'h0 {
+    bytes 4;
+    field ena(dut.ctrl_reg.en) @1 {
+      bits 1;
+      access rw;
+    }
+  }
+}
+"""
+        doc = parse_ralf(src)
+        reg = doc.blocks[0].registers[0]
+        self.assertEqual(reg.name, "CTRL")
+        self.assertEqual(reg.paren_path, "dut.ctrl_reg")
+        self.assertEqual(reg.offset_bytes, 0)
+        fld = reg.fields[0]
+        self.assertEqual(fld.name, "ena")
+        self.assertEqual(fld.paren_path, "dut.ctrl_reg.en")
+        self.assertEqual(fld.offset_bits, 1)
+        out = dump_ralf(doc)
+        self.assertIn("register CTRL (dut.ctrl_reg) @'h0", out)
+        self.assertIn("field ena(dut.ctrl_reg.en) @'h1", out)
+        doc2 = parse_ralf(out)
+        self.assertEqual(doc.model_dump(), doc2.model_dump())
+
+    def test_register_paren_path_forward_decl(self) -> None:
+        src = """
+block top {
+  register R0 (hdl.r0) @'h10;
+}
+"""
+        doc = parse_ralf(src)
+        r = doc.blocks[0].registers[0]
+        self.assertTrue(r.declaration_only)
+        self.assertEqual(r.paren_path, "hdl.r0")
+        self.assertEqual(r.offset_bytes, 0x10)
+        out = dump_ralf(doc)
+        self.assertIn("register R0 (hdl.r0) @'h10;", out)
+        doc2 = parse_ralf(out)
+        self.assertEqual(doc.model_dump(), doc2.model_dump())
+
+    def test_field_paren_path_no_space(self) -> None:
+        src = """
+block top {
+  register r {
+    bytes 4;
+    field sig(hdl.sig) @0 {
+      bits 4;
+    }
+  }
+}
+"""
+        doc = parse_ralf(src)
+        fld = doc.blocks[0].registers[0].fields[0]
+        self.assertEqual(fld.paren_path, "hdl.sig")
+        out = dump_ralf(doc)
+        self.assertIn("field sig(hdl.sig)", out)
+        doc2 = parse_ralf(out)
+        self.assertEqual(doc.model_dump(), doc2.model_dump())
+
     def test_block_ref_rhs_with_parentheses(self) -> None:
         src = """
 block top {
