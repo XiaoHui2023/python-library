@@ -1,18 +1,28 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
+from pathlib import Path
 
 from ralf_model.errors import RalfParseError
 from ralf_model.nodes import BlockNode, FieldNode, RalfDocument, RegisterNode
 
 
 class _Parser:
-    def __init__(self, text: str) -> None:
+    def __init__(
+        self,
+        text: str,
+        *,
+        path: Path | None = None,
+        line_sources: Sequence[Path] | None = None,
+    ) -> None:
         self._s = text
         self._n = len(text)
         self._i = 0
         self.line = 1
         self.col = 1
+        self._path = path
+        self._line_sources = line_sources
 
     def _advance(self, n: int = 1) -> None:
         for _ in range(n):
@@ -30,7 +40,10 @@ class _Parser:
         return self._s[j] if j < self._n else None
 
     def _error(self, msg: str) -> None:
-        raise RalfParseError(msg, line=self.line, col=self.col)
+        path = self._path
+        if self._line_sources and 0 < self.line <= len(self._line_sources):
+            path = self._line_sources[self.line - 1]
+        raise RalfParseError(msg, line=self.line, col=self.col, path=path)
 
     def skip_ws_and_comments(self) -> None:
         while self._i < self._n:
@@ -519,9 +532,14 @@ def _parse_verilog_sized(s: str, i: int) -> tuple[int, int]:
 _VER_WS = re.compile(r"\s+")
 
 
-def parse_ralf(text: str) -> RalfDocument:
+def parse_ralf(
+    text: str,
+    *,
+    path: Path | None = None,
+    line_sources: Sequence[Path] | None = None,
+) -> RalfDocument:
     """将 RALF 源文本解析为 `RalfDocument`。"""
-    p = _Parser(text)
+    p = _Parser(text, path=path, line_sources=line_sources)
     doc = p.parse_document()
     return doc
 

@@ -20,9 +20,13 @@ def load_ralf_file(
     p = Path(path).resolve()
     text = p.read_text(encoding=encoding)
     inc = tuple(Path(x).resolve() for x in (include_paths or ()))
+    line_sources: list[Path] | None = None
     if expand_source:
-        text = expand_ralf_sources(text, current_file=p, include_paths=inc, encoding=encoding)
-    return parse_ralf(text)
+        text, line_sources = expand_ralf_sources(
+            text, current_file=p, include_paths=inc, encoding=encoding
+        )
+        return parse_ralf(text, line_sources=line_sources)
+    return parse_ralf(text, path=p)
 
 
 def loads_ralf(
@@ -38,13 +42,14 @@ def loads_ralf(
     virtual = bd / "__inline__.ralf"
     inc = tuple(Path(x).resolve() for x in (include_paths or ()))
     if expand_source:
-        text = expand_ralf_sources(
+        text, line_sources = expand_ralf_sources(
             text,
             current_file=virtual,
             include_paths=inc,
             encoding=encoding,
         )
-    return parse_ralf(text)
+        return parse_ralf(text, line_sources=line_sources)
+    return parse_ralf(text, path=virtual)
 
 
 def dump_ralf_file(doc: RalfDocument, path: str | Path, *, encoding: str = "utf-8") -> None:

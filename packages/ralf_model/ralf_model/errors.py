@@ -10,10 +10,22 @@ class RalfError(Exception):
 class RalfParseError(RalfError):
     """文本不符合预期语法或词法。"""
 
-    def __init__(self, message: str, *, line: int, col: int) -> None:
-        super().__init__(f"{message} (行 {line}, 列 {col})")
+    def __init__(
+        self,
+        message: str,
+        *,
+        line: int,
+        col: int,
+        path: Path | None = None,
+    ) -> None:
+        loc = f"行 {line}, 列 {col}"
+        if path is not None:
+            loc = f"{path}: {loc}"
+        super().__init__(f"{message} ({loc})")
+        self.message = message
         self.line = line
         self.col = col
+        self.path = path
 
 
 class RalfSourceError(RalfError):

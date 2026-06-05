@@ -51,7 +51,7 @@ class SourceIncludeTests(unittest.TestCase):
             top = root / "top.ralf"
             top.write_text('source "mid.ralf"\n', encoding="utf-8")
 
-            out = expand_ralf_sources(
+            out, _line_sources = expand_ralf_sources(
                 top.read_text(encoding="utf-8"),
                 current_file=top.resolve(),
                 include_paths=(),

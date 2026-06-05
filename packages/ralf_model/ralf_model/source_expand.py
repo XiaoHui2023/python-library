@@ -109,11 +109,13 @@ def expand_ralf_sources(
     include_paths: Sequence[Path] = (),
     encoding: str = "utf-8",
     _chain: tuple[Path, ...] = (),
-) -> str:
+) -> tuple[str, list[Path]]:
     """将 Tcl 风格 ``source path`` 递归展开为单段 RALF 文本后再交给 ``parse_ralf``。
 
     ``current_file`` 用于确定相对路径的基准目录（通常为 ``path.parent``），并参与循环检测。
     从内存加载字符串时可使用 ``base_dir / \"__inline__.ralf\"`` 这类占位路径。
+
+    返回 ``(展开后文本, 行来源)``：``行来源[i]`` 对应展开结果第 ``i+1`` 行的源文件路径。
     """
     cf = current_file.resolve()
     if cf in _chain:
@@ -123,15 +125,17 @@ def expand_ralf_sources(
     inc = tuple(Path(p).resolve() for p in include_paths)
 
     out: list[str] = []
+    line_sources: list[Path] = []
     for line in text.splitlines(keepends=True):
         spec = _parse_source_argument(line)
         if spec is None:
             out.append(line)
+            line_sources.append(cf)
             continue
 
         inner_path = resolve_source_path(spec, base_dir=cf.parent, include_paths=inc)
         inner_text = inner_path.read_text(encoding=encoding)
-        expanded_inner = expand_ralf_sources(
+        expanded_inner, inner_sources = expand_ralf_sources(
             inner_text,
             current_file=inner_path,
             include_paths=inc,
@@ -139,7 +143,9 @@ def expand_ralf_sources(
             _chain=chain,
         )
         out.append(expanded_inner)
+        line_sources.extend(inner_sources)
         if expanded_inner and not expanded_inner.endswith("\n"):
             out.append("\n")
+            line_sources.append(inner_sources[-1] if inner_sources else inner_path)
 
-    return "".join(out)
+    return "".join(out), line_sources

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 
-from ralf_model import dump_ralf, parse_ralf
+from ralf_model import RalfParseError, dump_ralf, load_ralf_file, parse_ralf
 from ralf_model.parse import normalize_ralf_whitespace
 
 
@@ -174,6 +176,30 @@ block a {
         src = "block  x  {  // c\n bytes 1 ; } "
         n = normalize_ralf_whitespace(src)
         self.assertNotIn("//", n)
+
+
+class ParseErrorTests(unittest.TestCase):
+    def test_parse_error_includes_file_path(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            bad = Path(td) / "bad.ralf"
+            bad.write_text("block x {\n  ???\n}\n", encoding="utf-8")
+            with self.assertRaises(RalfParseError) as ctx:
+                load_ralf_file(bad, expand_source=False)
+            self.assertIn(str(bad.resolve()), str(ctx.exception))
+
+    def test_parse_error_in_included_file(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            inc = root / "inc"
+            inc.mkdir()
+            (inc / "broken.ralf").write_text("block y {\n  ???\n}\n", encoding="utf-8")
+            top = root / "top.ralf"
+            top.write_text('source "inc/broken.ralf"\n', encoding="utf-8")
+            broken = (inc / "broken.ralf").resolve()
+            with self.assertRaises(RalfParseError) as ctx:
+                load_ralf_file(top)
+            self.assertIn(str(broken), str(ctx.exception))
+            self.assertNotIn(str(top.resolve()), str(ctx.exception))
 
 
 if __name__ == "__main__":
