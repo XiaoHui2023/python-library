@@ -21,6 +21,16 @@ class LanRouterTests(unittest.TestCase):
         self.assertEqual(d.ip, "192.168.0.1")
         self.assertFalse(d.active)
 
+    def test_tplink_router_ignores_http_proxy_env(self) -> None:
+        router = create_router(
+            "tplink",
+            hostname="192.168.1.1",
+            username="admin",
+            password="secret",
+        )
+        assert router._router is not None
+        self.assertFalse(router._router._session.trust_env)
+
 
 if __name__ == "__main__":
     unittest.main()

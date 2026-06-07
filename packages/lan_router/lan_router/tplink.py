@@ -1,12 +1,26 @@
-from .base import BaseRouter
-from .device import Device
 from tplinkrouterc6u import TPLinkXDRClient
 
-class TPLinkRouter(BaseRouter):
-    _router: TPLinkXDRClient = None
+from .base import BaseRouter
+from .device import Device
 
-    def model_post_init(self,ctx):
-        self._router = TPLinkXDRClient(self.hostname, self.username, self.password)
+
+class _TPLinkXDRClientNoProxy(TPLinkXDRClient):
+    """TP-Link 客户端；忽略 HTTP_PROXY 等环境变量，内网路由器应直连。"""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._session.trust_env = False
+
+
+class TPLinkRouter(BaseRouter):
+    _router: TPLinkXDRClient | None = None
+
+    def model_post_init(self, ctx) -> None:
+        self._router = _TPLinkXDRClientNoProxy(
+            self.hostname,
+            self.username,
+            self.password,
+        )
 
     def login(self):
         self._router.authorize()
