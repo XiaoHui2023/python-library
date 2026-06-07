@@ -189,6 +189,7 @@ class HuntCrawlPacket(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     crawled_at: float = Field(description="爬取完成时的 Unix 秒")
+    next_fetch_at: float = Field(description="按计划下次爬取的 Unix 秒")
     marks: list[HuntMarkRecord] = Field(default_factory=list, description="解析后的狩猎记录")
     query: HuntQueryFilter = Field(description="本次爬取使用的筛选条件")
 

@@ -73,6 +73,7 @@ def test_crawl_once_returns_packet() -> None:
     assert isinstance(packet, HuntCrawlPacket)
     assert packet.query is hunt.query
     assert len(packet.marks) == 1
+    assert packet.next_fetch_at >= packet.crawled_at
 
 
 def test_start_stop_poll_service() -> None:
@@ -107,3 +108,16 @@ def test_wait_or_stop() -> None:
     assert wait_or_stop(stop_event, 0.1) is False
     stop_event.set()
     assert wait_or_stop(stop_event, 1.0) is True
+
+
+def test_wait_or_stop_wakes_early_on_stop() -> None:
+    stop_event = threading.Event()
+
+    def _set_stop() -> None:
+        time.sleep(0.05)
+        stop_event.set()
+
+    threading.Thread(target=_set_stop, daemon=True).start()
+    started = time.monotonic()
+    assert wait_or_stop(stop_event, 30.0) is True
+    assert time.monotonic() - started < 2.0

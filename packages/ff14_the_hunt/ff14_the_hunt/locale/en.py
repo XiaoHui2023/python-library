@@ -172,6 +172,7 @@ def crawl_packet_to_display_dict(
     payload: dict[str, object] = {
         "query": query_to_display_dict(packet.query),
         "crawled_at": packet.crawled_at,
+        "next_fetch_at": packet.next_fetch_at,
         "marks": [_mark_dict(mark) for mark in packet.marks],
     }
     if recently_spawned is not None:

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import threading
+import time
+
+_WAIT_SLICE_SECONDS = 1.0
 
 
 def wait_or_stop(stop_event: threading.Event, seconds: float) -> bool:
@@ -15,4 +18,12 @@ def wait_or_stop(stop_event: threading.Event, seconds: float) -> bool:
     """
     if seconds <= 0:
         return stop_event.is_set()
-    return stop_event.wait(timeout=seconds)
+    deadline = time.monotonic() + seconds
+    while not stop_event.is_set():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        slice_seconds = min(remaining, _WAIT_SLICE_SECONDS)
+        if stop_event.wait(timeout=slice_seconds):
+            return True
+    return True

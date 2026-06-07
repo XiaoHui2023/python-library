@@ -186,6 +186,7 @@ def crawl_packet_to_display_dict(
     payload: dict[str, object] = {
         "配置": query_to_display_dict(packet.query),
         "爬取时间": packet.crawled_at,
+        "下次爬取时间": packet.next_fetch_at,
         "怪物": [_mark_dict(mark) for mark in packet.marks],
     }
     if recently_spawned is not None:

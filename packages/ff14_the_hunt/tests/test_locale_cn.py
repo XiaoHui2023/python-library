@@ -64,6 +64,7 @@ def test_crawl_packet_to_display_dict_lists_all_marks() -> None:
     )
     packet = HuntCrawlPacket(
         crawled_at=1.0,
+        next_fetch_at=601.0,
         marks=[
             HuntMarkRecord(
                 hunt_key="Arch Aethereater Kozama'uka",

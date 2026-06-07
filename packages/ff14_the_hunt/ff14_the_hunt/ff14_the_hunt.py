@@ -333,8 +333,10 @@ class FF14TheHunt:
         crawled_at = self._scheduler.last_crawl_at
         if crawled_at is None:
             crawled_at = time.time()
+        wait_seconds = self._scheduler.seconds_until_next_fetch(now=crawled_at)
         return HuntCrawlPacket(
             crawled_at=crawled_at,
+            next_fetch_at=crawled_at + wait_seconds,
             marks=marks,
             query=self._query,
         )

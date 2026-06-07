@@ -50,7 +50,7 @@ hunt.run()
 
 也可用实例作装饰器：`@hunt`。
 
-单次爬取结果在 ``HuntCrawlPacket`` 里，含 ``crawled_at``、``marks``、``query``。
+单次爬取结果在 ``HuntCrawlPacket`` 里，含 ``crawled_at``、``next_fetch_at``、``marks``、``query``。
 
 ## 示例
 
