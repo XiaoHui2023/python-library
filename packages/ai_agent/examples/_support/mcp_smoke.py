@@ -6,6 +6,7 @@ from pathlib import Path
 from ai_agent.tools import Tool
 
 from examples._support.load_example_mcp import prepare_and_load_mcp
+from examples._support.mcp_debug_paths import prepare_and_load_mcp_with_debug
 
 _EXPECTED_TOOLS = frozenset(
     {
@@ -32,8 +33,16 @@ def _find_tool(tools: list[Tool], name: str) -> Tool:
 async def _with_mcp_tools(
     example_dir: Path,
     body: Callable[[list[Tool]], Awaitable[int]],
+    *,
+    scratch_dir: Path | None = None,
 ) -> int:
-    tools, loader = await prepare_and_load_mcp(example_dir)
+    if scratch_dir is not None:
+        tools, loader = await prepare_and_load_mcp_with_debug(
+            example_dir,
+            scratch_dir,
+        )
+    else:
+        tools, loader = await prepare_and_load_mcp(example_dir)
     try:
         return await body(tools)
     finally:
@@ -67,7 +76,7 @@ async def _verify_tool_list(tools: list[Tool]) -> int:
     return 0
 
 
-async def run_mcp_check(example_dir: Path) -> int:
+async def run_mcp_check(example_dir: Path, *, scratch_dir: Path | None = None) -> int:
     """
     从示例 ``mcp.json`` 加载 MCP，列出工具并调用取时。
 
@@ -84,7 +93,7 @@ async def run_mcp_check(example_dir: Path) -> int:
         print(f"current_time: {iso}")
         return 0
 
-    return await _with_mcp_tools(example_dir, body)
+    return await _with_mcp_tools(example_dir, body, scratch_dir=scratch_dir)
 
 
 async def run_mcp_probe(example_dir: Path, scratch_dir: Path) -> int:
@@ -126,4 +135,4 @@ async def run_mcp_probe(example_dir: Path, scratch_dir: Path) -> int:
         print(f"cursor_cli 返回:\n{preview}")
         return 0
 
-    return await _with_mcp_tools(example_dir, body)
+    return await _with_mcp_tools(example_dir, body, scratch_dir=scratch_dir)

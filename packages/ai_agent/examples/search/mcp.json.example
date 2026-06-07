@@ -25,7 +25,8 @@
         "CURSOR_AGENT_TIMEOUT": "600",
         "CURSOR_AGENT_DEFAULT_MODE": "agent",
         "CURSOR_AGENT_DEFAULT_SANDBOX": "disabled",
-        "CURSOR_AGENT_DEFAULT_MODEL": "composer-2.5-fast"
+        "CURSOR_AGENT_DEFAULT_MODEL": "composer-2.5-fast",
+        "CURSOR_CLI_DEBUG_LOG": "<optional-absolute-path-to-scratch/cursor_cli.mcp.stderr.log>"
       }
     }
   }

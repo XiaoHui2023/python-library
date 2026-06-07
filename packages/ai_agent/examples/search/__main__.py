@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -9,7 +10,10 @@ from ai_agent import AgentApp, RunInputPacket
 from examples._support.demo_sandbox import clear_demo_sessions, session_ids_in_script
 from examples._support.example_step import example_step
 from examples._support.llm_config import load_llm_config
-from examples._support.load_example_mcp import prepare_and_load_mcp
+from examples._support.mcp_debug_paths import (
+    ensure_example_mcp_debug_logs,
+    prepare_and_load_mcp_with_debug,
+)
 from examples._support.mcp_smoke import run_mcp_check, run_mcp_probe
 from examples._support.print_listener import create_print_listener
 from examples._support.print_timing import ExamplePrintTiming
@@ -145,8 +149,15 @@ async def _run_script(app: AgentApp, timing: ExamplePrintTiming) -> int:
 async def _run_demo() -> int:
     skills_root = _resolve_skills_root()
     print(f"技能根：{skills_root}")
+    ensure_example_mcp_debug_logs(_SEARCH_SCRATCH)
+    ai_log = os.environ.get("AI_AGENT_MCP_DEBUG_LOG", "")
+    print(f"MCP 调试日志（ai_agent）：{ai_log}")
+    print(f"MCP 调试日志（cursor_cli）：{_SEARCH_SCRATCH / 'cursor_cli.mcp.stderr.log'}")
     cfg = load_llm_config(_EXAMPLE_DIR)
-    tools, loader = await prepare_and_load_mcp(_EXAMPLE_DIR)
+    tools, loader = await prepare_and_load_mcp_with_debug(
+        _EXAMPLE_DIR,
+        _SEARCH_SCRATCH,
+    )
     try:
         app, timing = _build_app(cfg, skills_root, tools)
         return await _run_script(app, timing)
@@ -155,8 +166,9 @@ async def _run_demo() -> int:
 
 
 async def _run() -> int:
+    _SEARCH_SCRATCH.mkdir(parents=True, exist_ok=True)
     example_step("步骤 1/3：加载 mcp.json、列出工具并取时")
-    code = await run_mcp_check(_EXAMPLE_DIR)
+    code = await run_mcp_check(_EXAMPLE_DIR, scratch_dir=_SEARCH_SCRATCH)
     if code != 0:
         return code
 
