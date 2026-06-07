@@ -1,0 +1,10 @@
+CHANNEL_ID = "cn_weibo"
+DISPLAY_NAME = "FF14 官方微博"
+SCREEN_NAME = "cnff14"
+DEFAULT_UID = "1784473157"
+
+WEB_ORIGIN = "https://weibo.com"
+MOBILE_ORIGIN = "https://m.weibo.cn"
+PROFILE_URL = f"{WEB_ORIGIN}/{SCREEN_NAME}"
+DETAIL_URL_TEMPLATE = f"{MOBILE_ORIGIN}/detail/{{article_id}}"
+PERMALINK_TEMPLATE = f"{WEB_ORIGIN}/{DEFAULT_UID}/{{article_id}}"

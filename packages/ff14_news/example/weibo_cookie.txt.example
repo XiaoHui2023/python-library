@@ -1,0 +1,3 @@
+# 可选：手动 Cookie（省略则 example 用 Playwright 自动获取）
+# 浏览器打开 https://m.weibo.cn → F12 → 网络 → 刷新 → 复制请求头 Cookie
+# 另存为 example/weibo_cookie.txt
