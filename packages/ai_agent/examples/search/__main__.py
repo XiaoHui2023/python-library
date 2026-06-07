@@ -1,20 +1,14 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
 from pathlib import Path
 
 from ai_agent import AgentApp, RunInputPacket
 
 from examples._support.demo_sandbox import clear_demo_sessions, session_ids_in_script
-from examples._support.example_step import example_step
 from examples._support.llm_config import load_llm_config
-from examples._support.mcp_debug_paths import (
-    ensure_example_mcp_debug_logs,
-    prepare_and_load_mcp_with_debug,
-)
-from examples._support.mcp_smoke import run_mcp_check, run_mcp_probe
+from examples._support.load_example_mcp import prepare_and_load_mcp
 from examples._support.print_listener import create_print_listener
 from examples._support.print_timing import ExamplePrintTiming
 
@@ -30,13 +24,13 @@ _SCRIPT_STEPS: tuple[_ScriptStep, ...] = (
     (
         "demo",
         "用户",
-        "搜索今天的 AI 新闻，挑两条用聊天口吻告诉我。",
+        "今天 AI 有什么新闻？",
         False,
     ),
     (
         "demo",
         "用户",
-        "再搜一下 OpenAI 最近一周有什么官方动态，简短总结一下。",
+        "OpenAI 这周官方有什么更新？",
         False,
     ),
 )
@@ -79,7 +73,6 @@ def _build_app(
     app = AgentApp(
         _SANDBOX,
         harness_enabled=False,
-        planning_enabled=False,
         skill_roots={"skills": skills_root},
         rule_paths=[_RULE_PATH, _write_workspace_rule()],
         api_key=cfg.api_key,
@@ -146,39 +139,17 @@ async def _run_script(app: AgentApp, timing: ExamplePrintTiming) -> int:
     return 0 if ok else 1
 
 
-async def _run_demo() -> int:
+async def _run() -> int:
     skills_root = _resolve_skills_root()
     print(f"技能根：{skills_root}")
-    ensure_example_mcp_debug_logs(_SEARCH_SCRATCH)
-    ai_log = os.environ.get("AI_AGENT_MCP_DEBUG_LOG", "")
-    print(f"MCP 调试日志（ai_agent）：{ai_log}")
-    print(f"MCP 调试日志（cursor_cli）：{_SEARCH_SCRATCH / 'cursor_cli.mcp.stderr.log'}")
+    _SEARCH_SCRATCH.mkdir(parents=True, exist_ok=True)
     cfg = load_llm_config(_EXAMPLE_DIR)
-    tools, loader = await prepare_and_load_mcp_with_debug(
-        _EXAMPLE_DIR,
-        _SEARCH_SCRATCH,
-    )
+    tools, loader = await prepare_and_load_mcp(_EXAMPLE_DIR)
     try:
         app, timing = _build_app(cfg, skills_root, tools)
         return await _run_script(app, timing)
     finally:
         await loader.close()
-
-
-async def _run() -> int:
-    _SEARCH_SCRATCH.mkdir(parents=True, exist_ok=True)
-    example_step("步骤 1/3：加载 mcp.json、列出工具并取时")
-    code = await run_mcp_check(_EXAMPLE_DIR, scratch_dir=_SEARCH_SCRATCH)
-    if code != 0:
-        return code
-
-    example_step("步骤 2/3：探测 cursor_cli__run_cursor_agent")
-    code = await run_mcp_probe(_EXAMPLE_DIR, _SEARCH_SCRATCH)
-    if code != 0:
-        return code
-
-    example_step("步骤 3/3：LLM 联网搜索演示")
-    return await _run_demo()
 
 
 def main() -> None:

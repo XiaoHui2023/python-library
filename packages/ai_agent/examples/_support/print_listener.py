@@ -1,16 +1,11 @@
 from __future__ import annotations
 
 import json
-from typing import Literal
 
 from ai_agent import AgentListener, RunOutputPacket
-from ai_agent.context import RunContext, RunPhaseKind, RunStatus, ToolInvocation
-from ai_agent.plan.display import format_plan_for_terminal
-from ai_agent.plan.models import Plan, PlanStep
+from ai_agent.context import RunContext, RunStatus, ToolInvocation
 
 from examples._support.print_timing import ExamplePrintTiming
-
-_StepStatus = Literal["pending", "running", "done", "skipped"]
 
 
 def create_print_listener(
@@ -20,8 +15,7 @@ def create_print_listener(
     timing: ExamplePrintTiming | None = None,
 ) -> tuple[AgentListener, ExamplePrintTiming]:
     """
-    示例用终端 listener：按前端可对接的事件顺序打印规划与步骤的思考/回答流、
-    步骤进度、工具与交付物。
+    示例用终端 listener：打印思考/回答流、工具调用与终稿。
 
     Args:
         model: 可选，运行开始时打印的模型名
@@ -34,9 +28,6 @@ def create_print_listener(
     clock = timing if timing is not None else ExamplePrintTiming()
     thinking_open = False
     output_open = False
-    current_plan: Plan | None = None
-    step_statuses: list[_StepStatus] = []
-    active_step_index: int | None = None
     stream_section: str | None = None
 
     def _ts() -> str:
@@ -48,25 +39,8 @@ def create_print_listener(
         else:
             print()
 
-    def _print_block(text: str) -> None:
-        lines = text.splitlines() or [""]
-        _println(lines[0])
-        for line in lines[1:]:
-            print(line)
-
     def _section(title: str) -> None:
         _println(f"--- {title} ---")
-
-    def _phase_label(run: RunContext) -> str:
-        phase = run.phase
-        if phase is None:
-            return "运行"
-        if phase.kind == RunPhaseKind.PLANNING:
-            return "规划"
-        if phase.kind == RunPhaseKind.STEP and phase.step_index is not None:
-            total = len(current_plan.steps) if current_plan else "?"
-            return f"步骤 {phase.step_index + 1}/{total}"
-        return "运行"
 
     def _close_stream_section() -> None:
         nonlocal thinking_open, output_open, stream_section
@@ -101,97 +75,30 @@ def create_print_listener(
         for message in run.messages:
             _print_role_message(message.role, message.content)
 
-    def _format_progress_line(index: int, step: PlanStep, status: _StepStatus) -> str:
-        markers = {
-            "pending": "[ ]",
-            "running": "[>]",
-            "done": "[✓]",
-            "skipped": "[−]",
-        }
-        optional_tag = "（可选）" if step.optional else ""
-        return (
-            f"  {markers[status]} {index + 1}. {step.id} · {step.title}{optional_tag}"
-        )
-
-    def _print_plan_progress(highlight: int | None = None) -> None:
-        if current_plan is None:
-            return
-        _println()
-        _section("计划进度")
-        for index, step in enumerate(current_plan.steps):
-            status = step_statuses[index] if index < len(step_statuses) else "pending"
-            if highlight is not None and index == highlight:
-                status = "running"
-            _println(_format_progress_line(index, step, status))
-
-    def on_plan_start() -> None:
-        nonlocal current_plan, step_statuses, active_step_index
-        _close_stream_section()
-        current_plan = None
-        step_statuses = []
-        active_step_index = None
-        _println()
-        _section("规划")
-        _println("正在分析任务并生成步骤…")
-
-    def on_plan_ready(plan: Plan) -> None:
-        nonlocal current_plan, step_statuses
-        _close_stream_section()
-        current_plan = plan
-        step_statuses = ["pending"] * len(plan.steps)
-        _print_block(format_plan_for_terminal(plan))
-        _print_plan_progress()
-
-    def on_plan_step_start(step_index: int, step: PlanStep, plan: Plan) -> None:
-        nonlocal active_step_index
-        del step, plan
-        _close_stream_section()
-        active_step_index = step_index
-        if step_index < len(step_statuses):
-            step_statuses[step_index] = "running"
-        _print_plan_progress(highlight=step_index)
-
-    def on_plan_step_end(
-        step_index: int,
-        step: PlanStep,
-        plan: Plan,
-        output: str,
-        skipped: bool,
-    ) -> None:
-        del step, plan, output
-        _close_stream_section()
-        if step_index < len(step_statuses):
-            step_statuses[step_index] = "skipped" if skipped else "done"
-        tag = "已跳过" if skipped else "已完成"
-        _println()
-        _section(f"步骤 {step_index + 1} {tag}")
-        _print_plan_progress()
-
     def on_run_start(run: RunContext) -> None:
         nonlocal thinking_open, output_open
         _close_stream_section()
         thinking_open = False
         output_open = False
-        label = _phase_label(run)
         _println()
-        _section(f"{label} · 上下文")
+        _section("运行 · 上下文")
         _print_user_messages(run)
 
     def on_thinking_delta(delta: str, run: RunContext) -> None:
-        label = _phase_label(run)
-        _open_stream(f"{label} · 思考")
+        del run
+        _open_stream("运行 · 思考")
         print(delta, end="", flush=True)
 
     def on_output_delta(delta: str, run: RunContext) -> None:
-        label = _phase_label(run)
-        _open_stream(f"{label} · 回答")
+        del run
+        _open_stream("运行 · 回答")
         print(delta, end="", flush=True)
 
     def on_tool_start(invocation: ToolInvocation, run: RunContext) -> None:
+        del run
         _close_stream_section()
-        label = _phase_label(run)
         _println()
-        _section(f"{label} · 工具: {invocation.tool_name}")
+        _section(f"运行 · 工具: {invocation.tool_name}")
         _println(f"args: {json.dumps(invocation.arguments, ensure_ascii=False)}")
 
     def on_tool_end(invocation: ToolInvocation, run: RunContext) -> None:
@@ -201,16 +108,15 @@ def create_print_listener(
 
     def on_run_end(run: RunContext) -> None:
         _close_stream_section()
-        label = _phase_label(run)
         _println()
-        _section(f"{label} · 结束")
+        _section("运行 · 结束")
         _println(f"status: {run.status.value}")
-        if run.output and run.phase and run.phase.kind != RunPhaseKind.PLANNING:
+        if run.output:
             preview = run.output.strip()
             if len(preview) > 200:
                 preview = preview[:200] + "…"
             _println(f"output: {preview}")
-        elif run.status != RunStatus.COMPLETED and not run.output:
+        elif run.status != RunStatus.COMPLETED:
             _println("output: (empty)")
 
     def on_app_run_end(packet: RunOutputPacket) -> None:
@@ -228,10 +134,6 @@ def create_print_listener(
         _println(f"本轮总耗时: {clock.elapsed_s():.3f}s")
 
     listener = AgentListener(
-        on_plan_start=on_plan_start,
-        on_plan_ready=on_plan_ready,
-        on_plan_step_start=on_plan_step_start,
-        on_plan_step_end=on_plan_step_end,
         on_run_start=on_run_start,
         on_thinking_delta=on_thinking_delta,
         on_output_delta=on_output_delta,

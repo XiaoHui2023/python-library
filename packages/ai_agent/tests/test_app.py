@@ -106,9 +106,8 @@ class TestAgentApp(unittest.TestCase):
             )
             session = app.open_session("s1")
             names = {t.name for t in session.harness.build_skill_tools()}
-            self.assertIn("skill__list_skills", names)
+            self.assertIn("skill__load_skill", names)
             self.assertNotIn("skill__write_skill", names)
-            self.assertNotIn("skill__load_skill", names)
 
 
 if __name__ == "__main__":

@@ -29,7 +29,6 @@ from ai_agent.app.session import (
     build_session,
     normalize_session_listeners,
 )
-from ai_agent.harness.prompts import planning_attachments_addendum
 from ai_agent.listener import AgentListener, notify_app_run_end
 from ai_agent.memory import MemoryConfig, MemorySystem
 from ai_agent.tools import Tool
@@ -65,7 +64,6 @@ class AgentApp:
         memory_long_term_max_chunks: 长期记忆块数上限
         memory_important_max_entries: 重要记忆条目上限
         harness_enabled: 是否向模型注册 Harness 沙箱工具；默认关闭
-        planning_enabled: ``run`` 是否先规划再分步执行；默认开启
     """
 
     def __init__(
@@ -99,7 +97,6 @@ class AgentApp:
         memory_long_term_max_chunks: int = 30,
         memory_important_max_entries: int = 20,
         harness_enabled: bool = False,
-        planning_enabled: bool = True,
     ) -> None:
         self._sandbox_root = resolve_app_sandbox_root(sandbox)
         self._skill_roots = skill_roots
@@ -125,7 +122,6 @@ class AgentApp:
             important_max_entries=memory_important_max_entries,
         )
         self._harness_enabled = harness_enabled
-        self._planning_enabled = planning_enabled
         self._sessions: dict[str, AgentSession] = {}
 
     @property
@@ -152,11 +148,6 @@ class AgentApp:
     def harness_enabled(self) -> bool:
         """各会话是否向模型注册 Harness 沙箱工具。"""
         return self._harness_enabled
-
-    @property
-    def planning_enabled(self) -> bool:
-        """``run`` 是否经规划分步执行。"""
-        return self._planning_enabled
 
     @property
     def thinking_enabled(self) -> bool:
@@ -233,7 +224,7 @@ class AgentApp:
 
     async def run(self, packet: RunInputPacket) -> RunOutputPacket:
         """
-        运行入口：接收输入数据包，规划并逐步执行后返回输出数据包。
+        运行入口：接收输入数据包，执行单轮 ReAct 后返回输出数据包。
 
         单次调用内打开会话、处理完毕后从内存移除会话实例；Harness 与对话状态落在
         ``sessions/<session_id>/``。运行时事件通过构造时传入的 ``listeners`` 回调。
@@ -265,25 +256,10 @@ class AgentApp:
                 staged,
                 file_context,
             )
-            if self._planning_enabled:
-                planning_context = file_context
-                if staged:
-                    planning_context = (
-                        f"{file_context}\n\n{planning_attachments_addendum()}"
-                        if file_context.strip()
-                        else planning_attachments_addendum()
-                    )
-                plan_result = await session.run_with_plan(
-                    user_message=user_message,
-                    speaker=user_name,
-                    extra_planning_context=planning_context,
-                )
-                final_text = plan_result.final_output
-            else:
-                final_text = await session.run(
-                    user_message=user_message,
-                    speaker=user_name,
-                )
+            final_text = await session.run(
+                user_message=user_message,
+                speaker=user_name,
+            )
             answer, rel_files = parse_structured_run_output(final_text)
             output_files = resolve_output_files(rel_files, session.harness.workspace)
             if session.memory is None:

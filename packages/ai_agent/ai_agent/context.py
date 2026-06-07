@@ -24,24 +24,16 @@ class RunStatus(str, Enum):
 
 
 class RunPhaseKind(str, Enum):
-    """监听回调所归属的运行阶段，供前端区分规划与逐步执行。"""
+    """监听回调所归属的运行阶段。"""
 
-    PLANNING = "planning"
-    STEP = "step"
     DIRECT = "direct"
 
 
 @dataclass(frozen=True)
 class RunPhase:
-    """
-    单次 ReAct 或规划补全所处的阶段。
+    """单次 ReAct 所处的阶段。"""
 
-    规划阶段仅 ``kind=PLANNING``；逐步执行时带 ``step_index`` 与 ``step_id``。
-    """
-
-    kind: RunPhaseKind
-    step_index: int | None = None
-    step_id: str | None = None
+    kind: RunPhaseKind = RunPhaseKind.DIRECT
 
 
 @dataclass

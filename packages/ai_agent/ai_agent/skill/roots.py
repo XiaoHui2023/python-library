@@ -69,7 +69,7 @@ class SkillRootsSandbox:
         parts = cleaned.split("/")
         if len(parts) != 2:
             raise ValueError(
-                "skill_ref 须为 {root_key}/{skill_id} 形式，例如 project/demo-skill"
+                "skill_ref 须为 {root_key}/{skill_id} 形式，例如 skills/demo-skill"
             )
         root_key = self._require_root(parts[0])
         skill_id = parts[1].strip()

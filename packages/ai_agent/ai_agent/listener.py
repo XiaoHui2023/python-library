@@ -9,7 +9,6 @@ from ai_agent.context import RunContext, ToolInvocation
 
 if TYPE_CHECKING:
     from ai_agent.app.packet import RunOutputPacket
-    from ai_agent.plan.models import Plan, PlanStep
 
 ListenerCallback = Callable[..., Any] | Callable[..., Awaitable[Any]]
 
@@ -17,10 +16,9 @@ ListenerCallback = Callable[..., Any] | Callable[..., Awaitable[Any]]
 @dataclass
 class AgentListener:
     """
-    规划、逐步执行与应用交付的可选回调集合。
+    ReAct 运行与应用交付的可选回调集合。
 
-    流式思考与回答经 ``on_thinking_delta`` / ``on_output_delta`` 推送，
-    调用方可读 ``RunContext.phase`` 区分规划、计划步与直连 ReAct。
+    流式思考与回答经 ``on_thinking_delta`` / ``on_output_delta`` 推送。
     各钩子未设置时不调用；回调可为同步或 async 函数。
     """
 
@@ -30,10 +28,6 @@ class AgentListener:
     on_output_delta: ListenerCallback | None = None
     on_tool_start: ListenerCallback | None = None
     on_tool_end: ListenerCallback | None = None
-    on_plan_start: ListenerCallback | None = None
-    on_plan_ready: ListenerCallback | None = None
-    on_plan_step_start: ListenerCallback | None = None
-    on_plan_step_end: ListenerCallback | None = None
     on_app_run_end: ListenerCallback | None = None
 
 
@@ -116,51 +110,6 @@ async def notify_tool_end(
     for listener in listeners:
         if listener.on_tool_end is not None:
             await _invoke(listener.on_tool_end, invocation, run)
-
-
-async def notify_plan_start(listeners: Sequence[AgentListener]) -> None:
-    for listener in listeners:
-        if listener.on_plan_start is not None:
-            await _invoke(listener.on_plan_start)
-
-
-async def notify_plan_ready(listeners: Sequence[AgentListener], plan: Plan) -> None:
-    for listener in listeners:
-        if listener.on_plan_ready is not None:
-            await _invoke(listener.on_plan_ready, plan)
-
-
-async def notify_plan_step_start(
-    listeners: Sequence[AgentListener],
-    *,
-    step_index: int,
-    step: PlanStep,
-    plan: Plan,
-) -> None:
-    for listener in listeners:
-        if listener.on_plan_step_start is not None:
-            await _invoke(listener.on_plan_step_start, step_index, step, plan)
-
-
-async def notify_plan_step_end(
-    listeners: Sequence[AgentListener],
-    *,
-    step_index: int,
-    step: PlanStep,
-    plan: Plan,
-    output: str,
-    skipped: bool,
-) -> None:
-    for listener in listeners:
-        if listener.on_plan_step_end is not None:
-            await _invoke(
-                listener.on_plan_step_end,
-                step_index,
-                step,
-                plan,
-                output,
-                skipped,
-            )
 
 
 async def notify_app_run_end(

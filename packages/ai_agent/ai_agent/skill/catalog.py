@@ -84,6 +84,20 @@ def format_skill_list(summaries: list[SkillSummary]) -> str:
     return "\n".join(lines)
 
 
+def format_skill_catalog_prompt(summaries: list[SkillSummary]) -> str:
+    """拼入系统提示的技能目录块（仅 name 与 description）。"""
+    listing = format_skill_list(summaries)
+    if listing == "（未找到 skill）":
+        return ""
+    return (
+        "## 可用技能\n\n"
+        "下列为技能目录（仅 name 与 description）。"
+        "需要按某技能执行时，调用 **skill__load_skill** 载入该技能全文；"
+        "每轮对同一技能只需载入一次。\n\n"
+        f"{listing}"
+    )
+
+
 def _summary_from_file(root_key: str, skill_id: str, skill_md: Path) -> SkillSummary:
     raw = _read_bounded(skill_md)
     meta, _ = split_frontmatter(raw)

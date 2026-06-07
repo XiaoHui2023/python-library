@@ -40,28 +40,21 @@ class TestSkillKit(unittest.TestCase):
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
-    def test_list_skills(self) -> None:
-        text = self._kit.list_skills()
+    def test_catalog_for_prompt(self) -> None:
+        text = self._kit.format_catalog_for_prompt()
         self.assertIn("project/demo-skill", text)
         self.assertIn("演示 skill", text)
 
-    def test_metadata(self) -> None:
-        meta = self._kit.get_metadata("project/demo-skill")
-        self.assertIn("name: demo-skill", meta)
-
-    def test_roots_info_no_absolute_path(self) -> None:
-        info = self._kit.roots_info()
-        self.assertNotIn(str(self._root.resolve()), info)
-        self.assertIn("project", info)
-        self.assertIn("只读", info)
-
     def test_build_tools_names(self) -> None:
         names = {t.name for t in self._kit.build_tools()}
-        self.assertIn("skill__list_skills", names)
-        self.assertIn("skill__enable_skill", names)
-        self.assertEqual(len(names), 6)
-        self.assertNotIn("skill__write_skill", names)
-        self.assertNotIn("skill__load_skill", names)
+        self.assertEqual(
+            names,
+            {
+                "skill__load_skill",
+                "skill__disable_skill",
+                "skill__refresh_skills",
+            },
+        )
 
 
 class TestHarnessSkillRoots(unittest.TestCase):
@@ -92,16 +85,22 @@ class TestHarnessSkillRoots(unittest.TestCase):
     def test_build_skill_tools_via_harness(self) -> None:
         tools = self._harness.build_skill_tools()
         names = {t.name for t in tools}
-        self.assertIn("skill__list_skills", names)
-        self.assertEqual(len(names), 6)
+        self.assertEqual(
+            names,
+            {
+                "skill__load_skill",
+                "skill__disable_skill",
+                "skill__refresh_skills",
+            },
+        )
 
     def test_build_all_tools(self) -> None:
         names = {t.name for t in self._harness.build_all_tools()}
         self.assertIn("harness__read_file", names)
-        self.assertIn("skill__enable_skill", names)
+        self.assertIn("skill__load_skill", names)
 
-    def test_skill_property_lists(self) -> None:
-        listing = self._harness.skill.list_skills()
+    def test_skill_catalog(self) -> None:
+        listing = self._harness.skill.format_catalog_for_prompt()
         self.assertIn("store/agent-skill", listing)
 
 

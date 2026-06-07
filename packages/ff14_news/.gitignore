@@ -15,3 +15,8 @@ example/output/
 # 微博登录 Cookie / Playwright 会话（本地私密）
 example/weibo_cookie.txt
 example/.weibo_browser_state.json
+
+# 开发期临时探针/调试（包根，勿提交）
+/_probe_*.py
+/_debug_*.py
+/_jp_*

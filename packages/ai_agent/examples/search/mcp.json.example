@@ -1,32 +1,24 @@
 {
   "mcpServers": {
-    "current_time": {
-      "command": "uvx",
-      "args": [
-        "--from",
-        "<absolute-path-to-tools/current_time>",
-        "mcp-tool-current-time"
-      ],
-      "env": {
-        "PYTHONUNBUFFERED": "1"
-      }
-    },
     "cursor_cli": {
-      "command": "uvx",
+      "command": "<absolute-path-to-uv>",
       "args": [
-        "--refresh",
-        "--from",
+        "run",
+        "--project",
         "<absolute-path-to-tools/cursor_cli>",
-        "mcp-tool-cursor-cli"
+        "python",
+        "-m",
+        "mcp_tool_cursor_cli"
       ],
+      "cwd": "<absolute-path-to-tools/cursor_cli>",
       "env": {
+        "UV_PROJECT_ENVIRONMENT": "<absolute-path-to-uv-environments/mcp-tool-cursor-cli>",
         "PYTHONUNBUFFERED": "1",
-        "CURSOR_API_KEY": "<your-cursor-api-key>",
-        "CURSOR_AGENT_TIMEOUT": "600",
+        "CURSOR_AGENT_TIMEOUT": "120",
         "CURSOR_AGENT_DEFAULT_MODE": "agent",
         "CURSOR_AGENT_DEFAULT_SANDBOX": "disabled",
         "CURSOR_AGENT_DEFAULT_MODEL": "composer-2.5-fast",
-        "CURSOR_CLI_DEBUG_LOG": "<optional-absolute-path-to-scratch/cursor_cli.mcp.stderr.log>"
+        "CURSOR_API_KEY": "<your-cursor-api-key>"
       }
     }
   }

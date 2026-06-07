@@ -65,21 +65,12 @@ def _patch_build_session_with_llm(llm: ScriptLLM):
 
 class TestAgentAppRun(unittest.IsolatedAsyncioTestCase):
     async def test_run_packet_ephemeral_session(self) -> None:
-        plan_json = json.dumps(
-            {
-                "steps": [
-                    {"id": "step-1", "title": "一步", "objective": "交付 JSON"},
-                ],
-            },
-            ensure_ascii=False,
-        )
         final_json = json.dumps(
             {"answer": "完成", "output_files": []},
             ensure_ascii=False,
         )
         llm = ScriptLLM(
             _scripts=[
-                [StreamChunk(kind=StreamKind.TEXT, delta=plan_json)],
                 [StreamChunk(kind=StreamKind.TEXT, delta=final_json)],
             ],
         )
@@ -106,21 +97,12 @@ class TestAgentAppRun(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(out.user_name, "测试用户")
 
     async def test_run_notifies_app_run_end(self) -> None:
-        plan_json = json.dumps(
-            {
-                "steps": [
-                    {"id": "step-1", "title": "一步", "objective": "交付"},
-                ],
-            },
-            ensure_ascii=False,
-        )
         final_json = json.dumps(
             {"answer": "终稿", "output_files": []},
             ensure_ascii=False,
         )
         llm = ScriptLLM(
             _scripts=[
-                [StreamChunk(kind=StreamKind.TEXT, delta=plan_json)],
                 [StreamChunk(kind=StreamKind.TEXT, delta=final_json)],
             ],
         )
@@ -151,21 +133,12 @@ class TestAgentAppRun(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(seen, ["终稿"])
 
     async def test_run_restores_conversation_without_clear(self) -> None:
-        plan_json = json.dumps(
-            {
-                "steps": [
-                    {"id": "step-1", "title": "一步", "objective": "x"},
-                ],
-            },
-            ensure_ascii=False,
-        )
         final_json = json.dumps(
             {"answer": "第二次", "output_files": []},
             ensure_ascii=False,
         )
         llm = ScriptLLM(
             _scripts=[
-                [StreamChunk(kind=StreamKind.TEXT, delta=plan_json)],
                 [StreamChunk(kind=StreamKind.TEXT, delta=final_json)],
             ],
         )
@@ -197,7 +170,7 @@ class TestAgentAppRun(unittest.IsolatedAsyncioTestCase):
             history = load_conversation(session_root)
             self.assertGreaterEqual(len(history), 2)
 
-    async def test_run_without_planning(self) -> None:
+    async def test_run_plain_text_answer(self) -> None:
         llm = ScriptLLM(
             _scripts=[
                 [StreamChunk(kind=StreamKind.TEXT, delta="直接回答")],
@@ -212,7 +185,6 @@ class TestAgentAppRun(unittest.IsolatedAsyncioTestCase):
                 api_key="k",
                 model="m",
                 base_url="https://example.invalid/v1",
-                planning_enabled=False,
             )
             packet = RunInputPacket(
                 user_name="测试用户",
@@ -242,7 +214,6 @@ class TestAgentAppRun(unittest.IsolatedAsyncioTestCase):
                 api_key="k",
                 model="m",
                 base_url="https://example.invalid/v1",
-                planning_enabled=False,
                 harness_enabled=False,
             )
             packet = RunInputPacket(

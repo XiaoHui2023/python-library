@@ -15,14 +15,15 @@ from ai_agent.skill.tool_declarations import parse_tool_declarations
 from ai_agent.tools import Tool, ToolRegistry
 
 _SKILL_TOOL_PREFIX = "skill"
+_SKILL_ROOT_ALIASES = frozenset({"project", "user", "enable"})
 
 
 class SkillManager:
     """
-    技能动态能力层：扫描、加载、启用与停用，并向工具表注入管理与子工具。
+    技能动态能力层：扫描目录、按需载入正文与子工具。
 
-    启用技能时加载全文并暴露子工具；单次对话运行内正文可拼入临时系统上下文，
-    运行结束后恢复。技能仓库运行时只读，不可通过工具改写磁盘文件。
+    系统提示固定附带技能摘要；模型通过 ``load_skill`` 载入全文。
+    单次 ReAct 运行结束后清空已载入正文与子工具。
 
     Args:
         roots: 技能根目录；可为单路径、路径序列或根键到路径的映射
@@ -47,8 +48,6 @@ class SkillManager:
         self._run: RunContext | None = None
         self._run_enabled_refs: set[str] = set()
         self._run_context_refs: set[str] = set()
-        self._plan_active = False
-        self._plan_delivery_refs: tuple[str, ...] = ()
         self.refresh()
 
     @property
@@ -58,7 +57,7 @@ class SkillManager:
 
     @property
     def enabled_skill_refs(self) -> tuple[str, ...]:
-        """当前已启用的 skill 引用。"""
+        """当前已载入的 skill 引用。"""
         return tuple(sorted(self._enabled))
 
     @property
@@ -72,7 +71,7 @@ class SkillManager:
         return self._builtin
 
     def bind_registry(self, registry: ToolRegistry) -> None:
-        """绑定会话级工具表；变更启用状态后须 ``sync_to_registry``。"""
+        """绑定会话级工具表；变更载入状态后须 ``sync_to_registry``。"""
         self._registry = registry
 
     def sync_to_registry(self) -> None:
@@ -82,32 +81,9 @@ class SkillManager:
         self._registry.set_management_tools(self.build_management_tools())
         self._registry.set_skill_tools(self.build_enabled_tools())
 
-    def begin_plan(self) -> None:
-        """标记一次 ``PlanRunner.run`` 开始；与 ``end_plan`` 成对调用。"""
-        self._plan_active = True
-        self._plan_delivery_refs = ()
-
-    def end_plan(self) -> None:
-        """结束计划作用域并停用计划期间仍挂起的 skill。"""
-        self._plan_active = False
-        self._plan_delivery_refs = ()
-        for ref in list(self._enabled):
-            self._disable_unlocked(ref)
-        self.sync_to_registry()
-
-    def set_plan_delivery_skills(self, refs: tuple[str, ...]) -> None:
-        """
-        指定下一步 ReAct 开始前预载入上下文的终稿 skill。
-
-        仅在 ``begin_plan`` 之后、下一步 ``begin_run`` 之前调用；非终稿步传空元组。
-        """
-        if not self._plan_active:
-            return
-        self._plan_delivery_refs = refs
-
     def begin_run(self, run: RunContext) -> None:
         """
-        标记新一轮 ReAct 开始；运行内启用的 skill 在 ``end_run`` 时还原。
+        标记新一轮 ReAct 开始；运行内载入的 skill 在 ``end_run`` 时还原。
 
         Args:
             run: 当前 ``RunContext``
@@ -116,12 +92,9 @@ class SkillManager:
         self._run_enabled_refs = set()
         self._run_context_refs = set()
         run.ephemeral_skill_context = ""
-        if self._plan_active and self._plan_delivery_refs:
-            for ref in self._plan_delivery_refs:
-                self._activate_skill_for_run(ref)
 
     def end_run(self) -> None:
-        """结束当前 ReAct 运行：清空临时 skill 上下文并停用本运行内启用的 skill。"""
+        """结束当前 ReAct 运行：清空临时 skill 上下文并卸载本运行内载入的 skill。"""
         if self._run is not None:
             self._run.ephemeral_skill_context = ""
         for ref in list(self._run_enabled_refs):
@@ -129,12 +102,11 @@ class SkillManager:
         self._run = None
         self._run_enabled_refs = set()
         self._run_context_refs = set()
-        self._plan_delivery_refs = ()
         self.sync_to_registry()
 
     def refresh(self) -> str:
         """
-        重新扫描 skill 根目录，并移除已不存在 skill 的启用状态。
+        重新扫描 skill 根目录，并移除已不存在 skill 的载入状态。
 
         Returns:
             扫描结果摘要
@@ -151,45 +123,14 @@ class SkillManager:
         }
         return catalog.format_skill_list(summaries)
 
-    def list_skills(self, root_key: str = "") -> str:
-        """
-        列出可用 skill 摘要。
+    def format_catalog_for_prompt(self) -> str:
+        """生成须拼入系统提示的技能目录块。"""
+        items = sorted(self._available.values(), key=lambda item: item.skill_ref)
+        return catalog.format_skill_catalog_prompt(items)
 
-        Args:
-            root_key: 仅扫描该根；留空扫描全部
+    def load_skill(self, skill_ref: str) -> str:
         """
-        if root_key.strip():
-            key = self._sandbox.require_root(root_key)
-            items = [
-                item for item in self._available.values() if item.root_key == key
-            ]
-        else:
-            items = list(self._available.values())
-        items.sort(key=lambda item: item.skill_ref)
-        lines = [catalog.format_skill_list(items)]
-        if self._enabled:
-            lines.append("")
-            lines.append("已启用: " + ", ".join(sorted(self._enabled)))
-        return "\n".join(lines)
-
-    def get_metadata(self, skill_ref: str) -> str:
-        """读取 frontmatter 元数据摘要。"""
-        loaded = self._load(skill_ref)
-        meta = loaded.meta
-        if not meta:
-            return f"{skill_ref}：无 frontmatter"
-        out = [f"{skill_ref} 元数据："]
-        for key in sorted(meta.keys()):
-            out.append(f"  {key}: {meta[key]}")
-        if loaded.tool_decls:
-            out.append("  tools:")
-            for decl in loaded.tool_decls:
-                out.append(f"    - {decl.name} ({decl.handler})")
-        return "\n".join(out)
-
-    def enable_skill(self, skill_ref: str) -> str:
-        """
-        启用 skill：加载全文、注册子工具，并在当前 ReAct 运行内注入临时上下文。
+        载入 skill 全文；若有子工具则一并注册，并注入当前 ReAct 运行上下文。
 
         Args:
             skill_ref: ``{root_key}/{skill_id}``
@@ -208,38 +149,30 @@ class SkillManager:
             self._append_run_skill_context(ref, loaded.text)
         names = ", ".join(tool.name for tool in tools) if tools else "（无子工具）"
         context_note = "；正文已注入本轮上下文" if self._run is not None else ""
-        return f"已启用 {ref}；子工具: {names}{context_note}"
+        return f"已载入 {ref}；子工具: {names}{context_note}"
+
+    def enable_skill(self, skill_ref: str) -> str:
+        """``load_skill`` 的兼容别名。"""
+        return self.load_skill(skill_ref)
 
     def disable_skill(self, skill_ref: str) -> str:
         """
-        停用 skill 并移除其子工具。
+        卸载 skill 并移除其子工具与本轮临时上下文。
 
         Args:
             skill_ref: ``{root_key}/{skill_id}``
         """
         ref = self._normalize_ref(skill_ref)
         if ref not in self._enabled:
-            return f"skill 未启用: {ref}"
+            return f"skill 未载入: {ref}"
         self._disable_unlocked(ref)
         self._run_context_refs.discard(ref)
         if self._run is not None:
             self._rebuild_run_skill_context()
-        return f"已停用 {ref}"
-
-    def roots_info(self) -> str:
-        """说明 skill 根目录约束。"""
-        keys = ", ".join(self._sandbox.root_keys)
-        lines = [
-            f"已配置 skill 根: {keys}。",
-            "引用格式为 {root_key}/{skill_id}；",
-            "仅可访问各根下技能子目录中的文件，无法越出根目录。",
-            "使用 list_skills 扫描；enable_skill 启用后暴露子工具并注入本轮上下文。",
-            "skill 仓库在运行时只读，须在开发阶段维护文件。",
-        ]
-        return "".join(lines)
+        return f"已卸载 {ref}"
 
     def build_management_tools(self) -> list[Tool]:
-        """生成 skill 管理工具（不含已启用 skill 的子工具）。"""
+        """生成 skill 管理工具（不含已载入 skill 的子工具）。"""
         specs = self._management_specs()
         return [
             Tool(
@@ -252,14 +185,14 @@ class SkillManager:
         ]
 
     def build_enabled_tools(self) -> list[Tool]:
-        """合并当前已启用 skill 暴露的全部子工具。"""
+        """合并当前已载入 skill 暴露的全部子工具。"""
         tools: list[Tool] = []
         for ref in sorted(self._enabled):
             tools.extend(self._skill_tools.get(ref, ()))
         return tools
 
     def build_all_flat_tools(self) -> list[Tool]:
-        """管理工具与已启用子工具合并（兼容旧版 ``SkillKit.build_tools``）。"""
+        """管理工具与已载入子工具合并（兼容旧版 ``SkillKit.build_tools``）。"""
         return self.build_management_tools() + self.build_enabled_tools()
 
     def _management_specs(
@@ -269,25 +202,9 @@ class SkillManager:
     ]:
         return [
             (
-                "list_skills",
-                "扫描已配置的 skill 根目录，列出技能及启用状态。",
-                {
-                    "type": "object",
-                    "properties": {
-                        "root_key": {
-                            "type": "string",
-                            "description": "仅扫描该根键；留空扫描全部根",
-                        },
-                    },
-                    "additionalProperties": False,
-                },
-                self.list_skills,
-                False,
-                False,
-            ),
-            (
-                "enable_skill",
-                "启用指定 skill，使其声明的子工具加入当前会话工具表。",
+                "load_skill",
+                "载入指定 skill 的全文到本轮上下文；若 skill 声明子工具则一并注册。"
+                "路径格式 {root_key}/{skill_id}，如 skills/chat-search-answer。",
                 {
                     "type": "object",
                     "properties": {
@@ -299,13 +216,13 @@ class SkillManager:
                     "required": ["skill_ref"],
                     "additionalProperties": False,
                 },
-                self.enable_skill,
+                self.load_skill,
                 False,
                 True,
             ),
             (
                 "disable_skill",
-                "停用指定 skill 并移除其子工具与本轮临时上下文。",
+                "卸载指定 skill，移除其子工具与本轮临时上下文。",
                 {
                     "type": "object",
                     "properties": {
@@ -323,7 +240,7 @@ class SkillManager:
             ),
             (
                 "refresh_skills",
-                "重新扫描 skill 根目录并同步可用列表。",
+                "重新扫描 skill 根目录；系统提示中的技能目录在下一轮对话更新。",
                 {
                     "type": "object",
                     "properties": {},
@@ -332,36 +249,6 @@ class SkillManager:
                 self.refresh,
                 False,
                 True,
-            ),
-            (
-                "get_metadata",
-                "读取指定 skill 的 SKILL.md frontmatter 元数据。",
-                {
-                    "type": "object",
-                    "properties": {
-                        "skill_ref": {
-                            "type": "string",
-                            "description": "格式 {root_key}/{skill_id}",
-                        },
-                    },
-                    "required": ["skill_ref"],
-                    "additionalProperties": False,
-                },
-                self.get_metadata,
-                False,
-                False,
-            ),
-            (
-                "roots_info",
-                "查看 skill 根目录的使用约束与已配置的根键。",
-                {
-                    "type": "object",
-                    "properties": {},
-                    "additionalProperties": False,
-                },
-                self.roots_info,
-                False,
-                False,
             ),
         ]
 
@@ -432,22 +319,6 @@ class SkillManager:
         self._loaded[ref] = loaded
         return loaded
 
-    def _activate_skill_for_run(self, skill_ref: str) -> None:
-        """为当前 ReAct 运行启用 skill 并注入正文（计划终稿步预载，不经工具调用）。"""
-        ref = self._normalize_ref(skill_ref)
-        if ref in self._run_context_refs:
-            return
-        self._require_available(ref)
-        loaded = self._load(ref)
-        tools = self._build_skill_tools(ref, loaded.tool_decls)
-        self._skill_tools[ref] = tools
-        self._enabled.add(ref)
-        if self._run is not None:
-            self._run_enabled_refs.add(ref)
-            self._run_context_refs.add(ref)
-            self._append_run_skill_context(ref, loaded.text)
-        self.sync_to_registry()
-
     def _disable_unlocked(self, skill_ref: str) -> None:
         self._enabled.discard(skill_ref)
         self._skill_tools.pop(skill_ref, None)
@@ -482,5 +353,17 @@ class SkillManager:
         cleaned = skill_ref.strip().strip("/")
         if not cleaned or ".." in cleaned.split("/"):
             raise ValueError(f"skill_ref 非法: {skill_ref!r}")
+        cleaned = self._apply_skill_root_alias(cleaned)
         self._sandbox.parse_ref(cleaned)
         return cleaned
+
+    def _apply_skill_root_alias(self, skill_ref: str) -> str:
+        parts = skill_ref.split("/")
+        if len(parts) != 2:
+            return skill_ref
+        root_key, skill_id = parts[0], parts[1]
+        if root_key in self._sandbox.root_keys:
+            return skill_ref
+        if root_key in _SKILL_ROOT_ALIASES and "skills" in self._sandbox.root_keys:
+            return f"skills/{skill_id}"
+        return skill_ref

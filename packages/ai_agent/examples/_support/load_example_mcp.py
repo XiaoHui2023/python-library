@@ -39,12 +39,14 @@ def load_example_mcp_json(example_dir: Path) -> dict[str, Any]:
     return data
 
 
-async def prepare_and_load_mcp(example_dir: Path) -> tuple[list, MCPToolLoader]:
+async def prepare_and_load_mcp(
+    example_dir: Path,
+) -> tuple[list, MCPToolLoader]:
     """
     从示例目录 ``mcp.json`` 加载 MCP 工具。
 
     Args:
-        example_dir: 示例根目录
+        example_dir: 含 ``mcp.json`` 的示例根目录
     """
     document = load_example_mcp_json(example_dir)
     loader = MCPToolLoader()

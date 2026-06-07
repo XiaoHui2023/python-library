@@ -12,7 +12,7 @@ from typing import Any
 
 from ai_agent.agent import Agent
 
-from ai_agent.context import ChatMessage, RunContext, RunPhase
+from ai_agent.context import ChatMessage
 
 from ai_agent.harness import Harness
 
@@ -24,7 +24,6 @@ from ai_agent.skill import SkillKit
 
 from ai_agent.skill.manager import SkillManager
 
-from ai_agent.plan.models import PlanRunResult
 from ai_agent.tools import Tool, ToolRegistry
 
 
@@ -161,26 +160,16 @@ class AgentSession:
 
 
 
-    def enable_skill(self, skill_ref: str) -> str:
-
+    def load_skill(self, skill_ref: str) -> str:
         """
-
-        启用 skill 并刷新工具表。
-
-
+        载入 skill 全文并刷新工具表。
 
         Args:
-
             skill_ref: ``{root_key}/{skill_id}``
-
         """
-
         manager = self._require_skill_manager()
-
-        message = manager.enable_skill(skill_ref)
-
+        message = manager.load_skill(skill_ref)
         manager.sync_to_registry()
-
         return message
 
 
@@ -339,215 +328,21 @@ class AgentSession:
 
 
 
-    async def run_with_messages(
-        self,
-        *,
-        messages: list[ChatMessage],
-        system_prompt: str | None = None,
-        phase: RunPhase | None = None,
-    ) -> str:
-
-        """
-
-        用给定消息列表运行一轮（不自动改写 ``messages`` 属性）。
-
-
-
-        Args:
-
-            messages: 完整消息列表（通常含历史）
-
-            system_prompt: 覆盖默认规则拼装的完整系统提示；规划步执行时传入
-
-
-
-        Returns:
-
-            助手最终文本
-
-        """
-
-        prompt = (
-
-            system_prompt
-
-            if system_prompt is not None
-
-            else self.build_system_prompt()
-
-        )
-
-        return await self._agent.run_with_system(
-            system_prompt=prompt,
-            messages=messages,
-            phase=phase,
-        )
-
-
-
-    async def run_with_plan(
-
-        self,
-
-        *,
-
-        user_message: str,
-
-        speaker: str = "user",
-
-        extra_planning_context: str = "",
-
-    ) -> PlanRunResult:
-
-        """
-
-        先规划串行步骤，再逐步 ReAct 执行，返回计划与各步输出。
-
-
-
-        Args:
-
-            user_message: 本轮用户输入
-
-            speaker: 用户讲述者显示名
-
-            extra_planning_context: 拼入规划阶段的附加说明
-
-        Returns:
-
-            计划、各步完整输出与最终回答
-
-        """
-
-        from ai_agent.plan.runner import PlanRunner
-
-        runner = PlanRunner(
-            self._agent.context.llm,
-            listeners=self._agent.context.listeners,
-        )
-
-        return await runner.run(
-
-            self,
-
-            user_message=user_message,
-
-            speaker=speaker,
-
-            extra_planning_context=extra_planning_context,
-
-        )
-
-
-
-    def _prepare_plan_run(
-
-        self,
-
-        *,
-
-        user_message: str,
-
-        system_prompt: str,
-
-        speaker: str,
-
-    ) -> tuple[list[ChatMessage], str]:
-
-        if self._memory is not None:
-
-            self._memory.append(
-
-                speaker=speaker,
-
-                role="user",
-
-                content=user_message,
-
-            )
-
-            merged_system, messages = self._memory.context_for_agent(
-
-                system_prompt=system_prompt,
-
-            )
-
-            return list(messages), merged_system
-
-        name = speaker if speaker != "user" else None
-
-        self._messages.append(
-
-            ChatMessage(role="user", content=user_message, name=name),
-
-        )
-
-        return list(self._messages), system_prompt
-
-
-
-    def _finish_plan_run(
-
-        self,
-
-        *,
-
-        user_message: str,
-
-        final_output: str,
-
-        speaker: str,
-
-    ) -> None:
-
-        del user_message, speaker
-
-        from ai_agent.app.output_format import parse_structured_run_output
-
-        answer, _files = parse_structured_run_output(final_output)
-
-        assistant_content = answer if answer else final_output.strip()
-
-        if self._memory is not None:
-
-            self._memory.append(
-
-                speaker="assistant",
-
-                role="assistant",
-
-                content=assistant_content,
-
-            )
-
-            return
-
-        self._messages.append(
-            ChatMessage(role="assistant", content=assistant_content),
-        )
-
-
-
     def build_system_prompt(self) -> str:
-
         """
-
-        由规则文件拼成的系统提示（skill 正文在启用后注入单次运行上下文）。
+        由规则与技能目录拼成的系统提示（skill 正文在载入后注入单次运行上下文）。
 
         Returns:
-
             无内容时为空字符串
-
         """
-
         parts: list[str] = []
-
         rules_block = self._agent.rules.build_system_prompt()
-
         if rules_block:
-
             parts.append(rules_block)
-
+        if self._skill_manager is not None:
+            catalog_block = self._skill_manager.format_catalog_for_prompt()
+            if catalog_block:
+                parts.append(catalog_block)
         return "\n\n".join(parts)
 
 

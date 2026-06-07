@@ -37,7 +37,6 @@ def _build_app(cfg, mcp_tools: list) -> tuple[AgentApp, ExamplePrintTiming]:
     app = AgentApp(
         _SANDBOX,
         harness_enabled=False,
-        planning_enabled=False,
         rule_paths=[_RULE_PATH],
         api_key=cfg.api_key,
         model=cfg.model,
