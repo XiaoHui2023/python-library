@@ -98,11 +98,18 @@ class ImageSegment(BaseSegment):
     """图片段。"""
 
     type: Literal["image"] = "image"
-    file: str | None = None
-    filename: str | None = None
-    url: str | None = None
-    summary: str | None = None
-    subType: str | None = None
+
+
+class RecordSegment(BaseSegment):
+    """语音段（CQ record）。"""
+
+    type: Literal["record"] = "record"
+
+
+class FileSegment(BaseSegment):
+    """文件段。"""
+
+    type: Literal["file"] = "file"
 
 
 class ForwardSegment(BaseSegment):
@@ -116,18 +123,14 @@ class VideoSegment(BaseSegment):
     """视频段。"""
 
     type: Literal["video"] = "video"
-    file: str | None = None
-    url: str | None = None
-
-    def model_post_init(self, ctx) -> None:
-        self.file = self.data["file"]
-        self.url = self.data["url"]
 
 
 Segment = Annotated[
     Union[
         TextSegment,
         ImageSegment,
+        RecordSegment,
+        FileSegment,
         FaceSegment,
         AtSegment,
         ForwardSegment,
@@ -158,6 +161,8 @@ __all__ = [
     "BaseSegment",
     "TextSegment",
     "ImageSegment",
+    "RecordSegment",
+    "FileSegment",
     "FaceSegment",
     "AtSegment",
     "ForwardSegment",
