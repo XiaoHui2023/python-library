@@ -3,15 +3,23 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from ff14_the_hunt.models import HuntMarkRecord, HuntQueryFilter, TimerDisplay
+from ff14_the_hunt.models import HuntMarkRecord, HuntQueryFilter
 
-from ff14_the_hunt.bear_tracker.fate_timer import compute_fate_condition_timer
+from ff14_the_hunt.bear_tracker.fate_timer import compute_fate_timer
 from ff14_the_hunt.bear_tracker.resources import BearResources
-from ff14_the_hunt.bear_tracker.spawn_points import list_map_coordinates
 from ff14_the_hunt.bear_tracker.spawn_window import (
     compute_trigger_timer,
     is_recently_in_window,
 )
+
+
+def mark_has_display_timer(record: HuntMarkRecord) -> bool:
+    """记录是否带有站点主列表会展示的任一条计时。"""
+    return (
+        record.trigger_timer is not None
+        or record.condition_timer is not None
+        or record.fate_timer is not None
+    )
 
 
 def _passes_filter(
@@ -40,7 +48,6 @@ def build_hunt_record(
     *,
     timer_row: dict[str, Any],
     resources: BearResources,
-    spawn_states: dict[str, Any] | None,
     query: HuntQueryFilter,
     now: float | None = None,
     recent_grace_seconds: float = 900.0,
@@ -75,16 +82,11 @@ def build_hunt_record(
             now=now,
         )
 
-    condition = compute_fate_condition_timer(
-        last_death_time=float(last_death or 0.0),
+    fate_timer = compute_fate_timer(
         fate_last_seen=timer_row.get("fateLastSeen"),
         fate_last_death=timer_row.get("fateLastDeath"),
         now=now,
     )
-
-    map_key = resources.spawn_map_key(hunt_key, meta)
-    spawn_entry = resources.spawn_point.get(map_key) if map_key else None
-    points = list_map_coordinates(spawn_entry, api_states=spawn_states)
 
     recently = is_recently_in_window(trigger, grace_seconds=recent_grace_seconds)
     if last_mark and now is not None:
@@ -109,8 +111,8 @@ def build_hunt_record(
         fate_last_seen=timer_row.get("fateLastSeen"),
         fate_last_death=timer_row.get("fateLastDeath"),
         trigger_timer=trigger,
-        condition_timer=condition,
-        spawn_points=points,
+        condition_timer=None,
+        fate_timer=fate_timer,
         recently_spawned=recently,
         raw_timer=dict(timer_row),
     )

@@ -20,6 +20,14 @@ class BearTrackerClient:
         self._base_url = base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
 
+    @property
+    def base_url(self) -> str:
+        return self._base_url
+
+    @property
+    def timeout_seconds(self) -> float:
+        return self._timeout_seconds
+
     def sync_session(self) -> dict[str, Any]:
         """拉取会话与 ``resources``（含 DatabaseHunt、SpawnPoint、DataCenters）。"""
         return self._post("/syncSession", {})

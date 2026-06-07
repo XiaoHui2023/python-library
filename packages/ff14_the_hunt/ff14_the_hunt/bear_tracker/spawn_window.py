@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import time
 
-from ff14_the_hunt.models import SpawnWindowPhase, TimerDisplay
+from ff14_the_hunt.bear_tracker.timer_theme import build_timer_display
+from ff14_the_hunt.models import (
+    SpawnWindowPhase,
+    TimerBarColor,
+    TimerDisplay,
+    TimerKind,
+)
 
 
 def _format_duration(seconds: float) -> str:
@@ -45,9 +51,11 @@ def compute_trigger_timer(
 
     if now_ms < open_ms:
         remaining = (open_ms - now_ms) / 1000.0
-        return TimerDisplay(
-            label="trigger",
+        return build_timer_display(
+            kind=TimerKind.TRIGGER,
             phase=SpawnWindowPhase.ALMOST_OPEN,
+            bar_color=TimerBarColor.ERROR,
+            counts_up=False,
             remaining_seconds=remaining,
             summary=f"距离开窗 {_format_duration(remaining)}",
         )
@@ -56,18 +64,22 @@ def compute_trigger_timer(
         elapsed = (now_ms - open_ms) / 1000.0
         span = (close_ms - open_ms) / 1000.0
         progress = (elapsed / span * 100.0) if span > 0 else 0.0
-        return TimerDisplay(
-            label="trigger",
+        return build_timer_display(
+            kind=TimerKind.TRIGGER,
             phase=SpawnWindowPhase.OPEN,
+            bar_color=TimerBarColor.SUCCESS,
+            counts_up=True,
             elapsed_seconds=elapsed,
             progress_percent=min(progress, 999.0),
             summary=f"已开窗 {_format_duration(elapsed)}（{progress:.0f}%）",
         )
 
     elapsed_since_cap = (now_ms - close_ms) / 1000.0
-    return TimerDisplay(
-        label="trigger",
+    return build_timer_display(
+        kind=TimerKind.TRIGGER,
         phase=SpawnWindowPhase.CAPPED,
+        bar_color=TimerBarColor.INFO,
+        counts_up=True,
         elapsed_seconds=elapsed_since_cap,
         summary=f"已强制（cap） {_format_duration(elapsed_since_cap)}",
     )
