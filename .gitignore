@@ -14,6 +14,10 @@ packages/**/examples/**/.env
 packages/**/examples/**/mcp.json
 !packages/**/examples/**/mcp.json.example
 packages/**/examples/**/.sandbox/
+packages/**/examples/**/scratch/*
+!packages/**/examples/**/scratch/.gitkeep
+packages/**/examples/**/_ocr_once*.log
+packages/**/examples/**/_ocr_once*.txt
 .pytest_cache/
 config.yaml
 logs/
