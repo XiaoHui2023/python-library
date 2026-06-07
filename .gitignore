@@ -19,6 +19,7 @@ packages/**/examples/**/scratch/*
 packages/**/examples/**/_ocr_once*.log
 packages/**/examples/**/_ocr_once*.txt
 .pytest_cache/
+pytest-cache-files-*/
 config.yaml
 logs/
 .cursor/
