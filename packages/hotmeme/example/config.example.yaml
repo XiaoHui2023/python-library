@@ -1,0 +1,26 @@
+cn:
+  hotpush:
+    enabled: false
+    base_url: http://127.0.0.1:8000
+    limit: 10
+    timeout: 5
+
+  tikhub:
+    enabled: false
+    api_key: ${TIKHUB_API_KEY}
+    limit: 10
+    timeout: 5
+
+cn_pipeline:
+  topic_limit: 10
+  images_per_topic: 3
+  classify_topics: true
+  content_platforms:
+    - xiaohongshu
+    - weibo
+
+fetch:
+  per_source_timeout: 5
+  per_source_limit: 20
+  total_limit: 50
+  retries: 1
