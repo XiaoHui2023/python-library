@@ -5,7 +5,8 @@ import unittest
 from ai_agent import Agent, ChatMessage, RunStatus, Tool
 from ai_agent.context import RunContext
 from ai_agent.llm import StreamChunk, StreamKind
-from ai_agent.builtin_tools.current_time import build_current_time_tool
+from ai_agent.mcp_tool_names import CURRENT_TIME_TOOL_NAME
+from ai_agent.tools import Tool
 from ai_agent.loop import ReactLoop
 
 from script_llm import ScriptLLM
@@ -136,7 +137,7 @@ class ReactLoopTests(unittest.IsolatedAsyncioTestCase):
                     StreamChunk(
                         kind=StreamKind.TOOL_CALL,
                         tool_call_id="t1",
-                        tool_name="builtin__current_time",
+                        tool_name=CURRENT_TIME_TOOL_NAME,
                         tool_arguments={},
                     ),
                     StreamChunk(
@@ -162,7 +163,17 @@ class ReactLoopTests(unittest.IsolatedAsyncioTestCase):
                 ],
             ],
             tools=[
-                build_current_time_tool(),
+                Tool(
+                    name=CURRENT_TIME_TOOL_NAME,
+                    description="取时",
+                    parameters={
+                        "type": "object",
+                        "properties": {
+                            "timezone": {"type": "string"},
+                        },
+                    },
+                    handler=lambda *, timezone="": "2026-01-01T00:00:00+08:00",
+                ),
                 Tool(
                     name="search__go",
                     description="搜索",

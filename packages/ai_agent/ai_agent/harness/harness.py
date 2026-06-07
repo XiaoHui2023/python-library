@@ -4,7 +4,6 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from ai_agent.harness.current_time import get_current_time
 from ai_agent.harness.process import run_python, run_shell
 from ai_agent.harness.sandbox import HarnessSandbox
 from ai_agent.skill.manager import SkillManager
@@ -153,15 +152,6 @@ class Harness:
             "使用 list_files 查看目录结构。"
         )
 
-    def current_time(self, timezone: str = "") -> str:
-        """
-        返回当前日期与时间。
-
-        Args:
-            timezone: IANA 时区名，如 Asia/Shanghai；留空则用本机本地时区
-        """
-        return get_current_time(timezone)
-
     def build_skill_tools(self) -> list[Tool]:
         """生成 skill 管理 Tool 列表；须已配置 skill_roots。"""
         return self.skill.build_management_tools()
@@ -296,21 +286,6 @@ class Harness:
                     "additionalProperties": False,
                 },
                 self.workspace_info,
-            ),
-            (
-                "current_time",
-                "获取当前日期与时间，可按 IANA 时区名指定时区。",
-                {
-                    "type": "object",
-                    "properties": {
-                        "timezone": {
-                            "type": "string",
-                            "description": "IANA 时区名，如 Asia/Shanghai；省略则使用本机本地时区",
-                        },
-                    },
-                    "additionalProperties": False,
-                },
-                self.current_time,
             ),
         ]
         return [

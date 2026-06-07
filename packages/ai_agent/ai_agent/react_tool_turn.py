@@ -1,14 +1,7 @@
 from __future__ import annotations
 
-from ai_agent.builtin_tools.current_time import (
-    CURRENT_TIME_SHORT_NAME,
-    harness_current_time_tool_name,
-)
-from ai_agent.builtin_tools.prefix import builtin_tool_name
 from ai_agent.context import ToolInvocation
-
-_BUILTIN_CURRENT_TIME = builtin_tool_name(CURRENT_TIME_SHORT_NAME)
-_HARNESS_CURRENT_TIME = harness_current_time_tool_name()
+from ai_agent.mcp_tool_names import CURRENT_TIME_TOOL_NAME
 
 _SAME_TURN_DEFERRED_TOOL_REPLY = (
     "未执行：本回合已与取时工具同时发起。请先阅读同回合取时工具的返回，"
@@ -17,8 +10,8 @@ _SAME_TURN_DEFERRED_TOOL_REPLY = (
 
 
 def is_current_time_tool(tool_name: str) -> bool:
-    """是否为应用或 Harness 的取时工具对外名。"""
-    return tool_name in (_BUILTIN_CURRENT_TIME, _HARNESS_CURRENT_TIME)
+    """是否为 MCP 取时工具 ``current_time__get_current_time``。"""
+    return tool_name == CURRENT_TIME_TOOL_NAME
 
 
 def batch_includes_current_time(batch: list[ToolInvocation]) -> bool:

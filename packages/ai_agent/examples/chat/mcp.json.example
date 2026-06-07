@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "current_time": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/XiaoHui2023/tools.git#subdirectory=current_time",
+        "mcp-tool-current-time"
+      ],
+      "env": {
+        "PYTHONUNBUFFERED": "1"
+      }
+    }
+  }
+}

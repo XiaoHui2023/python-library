@@ -7,65 +7,52 @@ from pathlib import Path
 from ai_agent import AgentApp, RunInputPacket
 
 from examples._support.demo_sandbox import clear_demo_sessions, session_ids_in_script
-from examples._support.example_step import example_step
 from examples._support.llm_config import load_llm_config
 from examples._support.load_example_mcp import prepare_and_load_mcp
-from examples._support.mcp_smoke import run_mcp_check, run_mcp_probe
 from examples._support.print_listener import create_print_listener
 from examples._support.print_timing import ExamplePrintTiming
 
 _EXAMPLE_DIR = Path(__file__).resolve().parent
 _SANDBOX = _EXAMPLE_DIR / ".sandbox"
-_SEARCH_SCRATCH = _EXAMPLE_DIR / "scratch"
-_SKILL_MARKER = "chat-search-answer"
 _RULE_PATH = _EXAMPLE_DIR / "rules" / "assistant.md"
+_FIXTURES = _EXAMPLE_DIR / "fixtures"
+_DEMO_SESSION = "demo"
 
-_ScriptStep = tuple[str, str, str, bool]
+_ScriptStep = tuple[str, str, str, bool, tuple[str, ...]]
 
 _SCRIPT_STEPS: tuple[_ScriptStep, ...] = (
     (
         "demo",
         "用户",
-        "搜索今天的 AI 新闻，挑两条用聊天口吻告诉我。",
-        False,
+        "",
+        True,
+        (str(_FIXTURES / "note.txt"),),
     ),
     (
         "demo",
         "用户",
-        "再搜一下 OpenAI 最近一周有什么官方动态，简短总结一下。",
+        "这是什么？",
         False,
+        (str(_FIXTURES / "sample.png"),),
     ),
 )
 
 
 def _write_workspace_rule() -> Path:
     path = _EXAMPLE_DIR / "rules" / "workspace.md"
-    scratch = _SEARCH_SCRATCH.resolve()
+    harness_rel = f"sessions/{_DEMO_SESSION}/harness"
     path.write_text(
-        "## 本示例搜索工作区\n\n"
-        f"调用 **cursor_cli__run_cursor_agent** 时 **workspace** 填：`{scratch}`\n",
+        "## 本示例 MCP 工作区\n\n"
+        f"调用 **cursor_cli__run_cursor_agent** 时 **workspace** 填：`{harness_rel}`\n"
+        "（相对 mcp.json 的 **cwd**，即本示例 `.sandbox` 目录）。\n"
+        "**image_paths** / **context_paths** 填相对该 workspace 的路径（如 `incoming/photo.png`）。\n",
         encoding="utf-8",
     )
     return path
 
 
-def _resolve_skills_root() -> Path:
-    for ancestor in (_EXAMPLE_DIR, *_EXAMPLE_DIR.parents):
-        root = ancestor / "skills"
-        if (root / _SKILL_MARKER).is_dir():
-            return root
-    raise ValueError(
-        f"未找到 skills/{_SKILL_MARKER}（已从 {_EXAMPLE_DIR} 向上查找）",
-    )
-
-
-def _build_app(
-    cfg,
-    skills_root: Path,
-    mcp_tools: list,
-) -> tuple[AgentApp, ExamplePrintTiming]:
+def _build_app(cfg, mcp_tools: list) -> tuple[AgentApp, ExamplePrintTiming]:
     _SANDBOX.mkdir(parents=True, exist_ok=True)
-    _SEARCH_SCRATCH.mkdir(parents=True, exist_ok=True)
     timing = ExamplePrintTiming()
     listener, _ = create_print_listener(
         model=cfg.model,
@@ -74,9 +61,6 @@ def _build_app(
     )
     app = AgentApp(
         _SANDBOX,
-        harness_enabled=False,
-        planning_enabled=False,
-        skill_roots={"skills": skills_root},
         rule_paths=[_RULE_PATH, _write_workspace_rule()],
         api_key=cfg.api_key,
         model=cfg.model,
@@ -84,9 +68,7 @@ def _build_app(
         temperature=cfg.temperature,
         max_tokens=cfg.max_tokens,
         thinking_enabled=cfg.thinking_enabled,
-        memory_api_key=cfg.api_key,
-        memory_model=cfg.model,
-        memory_base_url=cfg.base_url,
+        harness_enabled=True,
         listeners=listener,
     )
     app.set_shared_extra_tools(mcp_tools)
@@ -101,72 +83,62 @@ async def _one_turn(
     user_name: str,
     request: str,
     clear: bool = False,
-) -> str:
+    input_files: tuple[str, ...] = (),
+) -> tuple[str, tuple[str, ...]]:
     timing.reset()
     output = await app.run(
         RunInputPacket(
             user_name=user_name,
             session_id=session_id,
             request=request,
+            input_files=input_files,
             clear=clear,
         ),
     )
-    return output.answer.strip()
+    return output.answer.strip(), output.output_files
 
 
 async def _run_script(app: AgentApp, timing: ExamplePrintTiming) -> int:
-    demo_sessions = session_ids_in_script(_SCRIPT_STEPS)
-    clear_demo_sessions(_SANDBOX, demo_sessions)
-    print(
-        f"{timing.tag()} 演示前已清空会话: {', '.join(demo_sessions)}",
+    demo_sessions = session_ids_in_script(
+        tuple(step[:4] for step in _SCRIPT_STEPS),
     )
-    print(f"{timing.tag()} 联网搜索工作区：{_SEARCH_SCRATCH}")
+    clear_demo_sessions(_SANDBOX, demo_sessions)
+    print(f"{timing.tag()} 演示前已清空会话: {', '.join(demo_sessions)}")
     print()
     ok = True
-    for session_id, user_name, request, clear in _SCRIPT_STEPS:
+    for session_id, user_name, request, clear, input_files in _SCRIPT_STEPS:
         timing.reset()
         print(f"{timing.tag()} --- 会话 {session_id} | 用户 {user_name} ---")
-        print(f"{timing.tag()} > {request}")
-        answer = await _one_turn(
+        label = request.strip() or "（仅附件，无文字）"
+        print(f"{timing.tag()} > {label}")
+        if input_files:
+            print(f"{timing.tag()} 附件: {', '.join(input_files)}")
+        answer, out_files = await _one_turn(
             app,
             timing,
             session_id=session_id,
             user_name=user_name,
             request=request,
             clear=clear,
+            input_files=input_files,
         )
         print(f"{timing.tag()} 回合结束")
+        if out_files:
+            print(f"{timing.tag()} 输出文件: {', '.join(out_files)}")
         print()
         if not answer:
             ok = False
     return 0 if ok else 1
 
 
-async def _run_demo() -> int:
-    skills_root = _resolve_skills_root()
-    print(f"技能根：{skills_root}")
+async def _run() -> int:
     cfg = load_llm_config(_EXAMPLE_DIR)
     tools, loader = await prepare_and_load_mcp(_EXAMPLE_DIR)
     try:
-        app, timing = _build_app(cfg, skills_root, tools)
+        app, timing = _build_app(cfg, tools)
         return await _run_script(app, timing)
     finally:
         await loader.close()
-
-
-async def _run() -> int:
-    example_step("步骤 1/3：加载 mcp.json、列出工具并取时")
-    code = await run_mcp_check(_EXAMPLE_DIR)
-    if code != 0:
-        return code
-
-    example_step("步骤 2/3：探测 cursor_cli__run_cursor_agent")
-    code = await run_mcp_probe(_EXAMPLE_DIR, _SEARCH_SCRATCH)
-    if code != 0:
-        return code
-
-    example_step("步骤 3/3：LLM 联网搜索演示")
-    return await _run_demo()
 
 
 def main() -> None:

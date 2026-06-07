@@ -47,25 +47,13 @@ class TestHarnessSandbox(unittest.TestCase):
         info = self._harness.workspace_info()
         self.assertNotIn(str(self._root), info)
 
-    def test_current_time_local(self) -> None:
-        text = self._harness.current_time()
-        self.assertRegex(text, r"^\d{4}-\d{2}-\d{2}T")
-
-    def test_current_time_timezone(self) -> None:
-        text = self._harness.current_time("UTC")
-        self.assertTrue(text.endswith("+00:00") or text.endswith("Z"))
-
-    def test_current_time_invalid_timezone(self) -> None:
-        with self.assertRaises(ValueError):
-            self._harness.current_time("Not/A/Zone")
-
     def test_build_tools_names(self) -> None:
         tools = self._harness.build_tools()
         names = {t.name for t in tools}
         self.assertIn("harness__read_file", names)
         self.assertIn("harness__list_files", names)
-        self.assertIn("harness__current_time", names)
-        self.assertEqual(len(names), 7)
+        self.assertNotIn("harness__current_time", names)
+        self.assertEqual(len(names), 6)
 
 
 if __name__ == "__main__":

@@ -1,22 +1,10 @@
 {
   "mcpServers": {
-    "current_time": {
-      "command": "uvx",
-      "args": [
-        "--from",
-        "<absolute-path-to-tools/current_time>",
-        "mcp-tool-current-time"
-      ],
-      "env": {
-        "PYTHONUNBUFFERED": "1"
-      }
-    },
     "cursor_cli": {
       "command": "uvx",
       "args": [
-        "--refresh",
         "--from",
-        "<absolute-path-to-tools/cursor_cli>",
+        "git+https://github.com/XiaoHui2023/tools.git#subdirectory=cursor_cli",
         "mcp-tool-cursor-cli"
       ],
       "env": {

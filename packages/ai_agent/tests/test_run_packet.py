@@ -196,3 +196,64 @@ class TestAgentAppRun(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(out.answer, "第二次")
             history = load_conversation(session_root)
             self.assertGreaterEqual(len(history), 2)
+
+    async def test_run_without_planning(self) -> None:
+        llm = ScriptLLM(
+            _scripts=[
+                [StreamChunk(kind=StreamKind.TEXT, delta="直接回答")],
+            ],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            rule_file = Path(tmp) / "rules.md"
+            rule_file.write_text("你是助手", encoding="utf-8")
+            app = AgentApp(
+                tmp,
+                rule_paths=[rule_file],
+                api_key="k",
+                model="m",
+                base_url="https://example.invalid/v1",
+                planning_enabled=False,
+            )
+            packet = RunInputPacket(
+                user_name="测试用户",
+                session_id="direct",
+                request="你好",
+                clear=True,
+            )
+            with _patch_build_session_with_llm(llm):
+                out = await app.run(packet)
+            self.assertEqual(out.answer, "直接回答")
+
+    async def test_run_discards_input_files_when_harness_disabled(self) -> None:
+        llm = ScriptLLM(
+            _scripts=[
+                [StreamChunk(kind=StreamKind.TEXT, delta="只处理文本")],
+            ],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rule_file = root / "rules.md"
+            rule_file.write_text("你是助手", encoding="utf-8")
+            input_file = root / "photo.png"
+            input_file.write_bytes(b"fake image")
+            app = AgentApp(
+                root,
+                rule_paths=[rule_file],
+                api_key="k",
+                model="m",
+                base_url="https://example.invalid/v1",
+                planning_enabled=False,
+                harness_enabled=False,
+            )
+            packet = RunInputPacket(
+                user_name="测试用户",
+                session_id="discard-files",
+                request="看一下",
+                input_files=(str(input_file),),
+                clear=True,
+            )
+            with _patch_build_session_with_llm(llm):
+                out = await app.run(packet)
+            self.assertEqual(out.answer, "只处理文本")
+            incoming = root / "sessions" / "discard-files" / "harness" / "incoming"
+            self.assertFalse(incoming.exists())

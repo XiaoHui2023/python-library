@@ -12,6 +12,7 @@ from ai_agent.app._workspace import (
     validate_session_id,
 )
 from ai_agent.app.harness_io import (
+    compose_user_message_with_attachments,
     format_input_files_context,
     resolve_output_files,
     stage_input_files,
@@ -28,6 +29,7 @@ from ai_agent.app.session import (
     build_session,
     normalize_session_listeners,
 )
+from ai_agent.harness.prompts import planning_attachments_addendum
 from ai_agent.listener import AgentListener, notify_app_run_end
 from ai_agent.memory import MemoryConfig, MemorySystem
 from ai_agent.tools import Tool
@@ -63,7 +65,7 @@ class AgentApp:
         memory_long_term_max_chunks: 长期记忆块数上限
         memory_important_max_entries: 重要记忆条目上限
         harness_enabled: 是否向模型注册 Harness 沙箱工具；默认关闭
-        current_time_tool_enabled: 是否注册 ``builtin__current_time``；默认开启
+        planning_enabled: ``run`` 是否先规划再分步执行；默认开启
     """
 
     def __init__(
@@ -97,7 +99,7 @@ class AgentApp:
         memory_long_term_max_chunks: int = 30,
         memory_important_max_entries: int = 20,
         harness_enabled: bool = False,
-        current_time_tool_enabled: bool = True,
+        planning_enabled: bool = True,
     ) -> None:
         self._sandbox_root = resolve_app_sandbox_root(sandbox)
         self._skill_roots = skill_roots
@@ -123,7 +125,7 @@ class AgentApp:
             important_max_entries=memory_important_max_entries,
         )
         self._harness_enabled = harness_enabled
-        self._current_time_tool_enabled = current_time_tool_enabled
+        self._planning_enabled = planning_enabled
         self._sessions: dict[str, AgentSession] = {}
 
     @property
@@ -152,9 +154,9 @@ class AgentApp:
         return self._harness_enabled
 
     @property
-    def current_time_tool_enabled(self) -> bool:
-        """各会话是否向模型注册 ``builtin__current_time``。"""
-        return self._current_time_tool_enabled
+    def planning_enabled(self) -> bool:
+        """``run`` 是否经规划分步执行。"""
+        return self._planning_enabled
 
     @property
     def thinking_enabled(self) -> bool:
@@ -225,7 +227,6 @@ class AgentApp:
             listeners=self._listeners,
             memory=session_memory,
             harness_enabled=self._harness_enabled,
-            current_time_tool_enabled=self._current_time_tool_enabled,
         )
         self._sessions[label] = session
         return session
@@ -256,20 +257,34 @@ class AgentApp:
         try:
             if not packet.clear and session.memory is None:
                 session.replace_messages(load_conversation(session_root))
-            if packet.input_files and not self._harness_enabled:
-                raise ValueError(
-                    "已传入 input_files 但 AgentApp.harness_enabled 为 False；"
-                    "请启用 Harness 或勿附带附件",
-                )
-            staged = stage_input_files(packet.input_files, session.harness.workspace)
+            input_files = packet.input_files if self._harness_enabled else ()
+            staged = stage_input_files(input_files, session.harness.workspace)
             file_context = format_input_files_context(staged)
-            user_message = _compose_plan_user_message(packet.request, file_context)
-            plan_result = await session.run_with_plan(
-                user_message=user_message,
-                speaker=user_name,
-                extra_planning_context=file_context,
+            user_message = compose_user_message_with_attachments(
+                packet.request,
+                staged,
+                file_context,
             )
-            answer, rel_files = parse_structured_run_output(plan_result.final_output)
+            if self._planning_enabled:
+                planning_context = file_context
+                if staged:
+                    planning_context = (
+                        f"{file_context}\n\n{planning_attachments_addendum()}"
+                        if file_context.strip()
+                        else planning_attachments_addendum()
+                    )
+                plan_result = await session.run_with_plan(
+                    user_message=user_message,
+                    speaker=user_name,
+                    extra_planning_context=planning_context,
+                )
+                final_text = plan_result.final_output
+            else:
+                final_text = await session.run(
+                    user_message=user_message,
+                    speaker=user_name,
+                )
+            answer, rel_files = parse_structured_run_output(final_text)
             output_files = resolve_output_files(rel_files, session.harness.workspace)
             if session.memory is None:
                 save_conversation(session_root, list(session.messages))
@@ -311,11 +326,3 @@ class AgentApp:
         """
         label = validate_session_id(session_id)
         return self._sessions.pop(label, None) is not None
-
-
-def _compose_plan_user_message(request: str, file_context: str) -> str:
-    """拼规划与记忆用的用户原文（不含最终交付 JSON 说明）。"""
-    parts: list[str] = [request.strip()]
-    if file_context.strip():
-        parts.append(file_context.strip())
-    return "\n\n".join(parts)

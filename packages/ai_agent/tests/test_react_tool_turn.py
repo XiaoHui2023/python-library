@@ -13,13 +13,12 @@ from ai_agent.react_tool_turn import (
 
 class ReactToolTurnTests(unittest.TestCase):
     def test_is_current_time_tool(self) -> None:
-        self.assertTrue(is_current_time_tool("builtin__current_time"))
-        self.assertTrue(is_current_time_tool("harness__current_time"))
-        self.assertFalse(is_current_time_tool("bocha_search__bocha_search"))
+        self.assertTrue(is_current_time_tool("current_time__get_current_time"))
+        self.assertFalse(is_current_time_tool("cursor_cli__run_cursor_agent"))
 
     def test_defer_non_time_when_batch_has_time(self) -> None:
         batch = [
-            ToolInvocation(call_id="1", tool_name="builtin__current_time"),
+            ToolInvocation(call_id="1", tool_name="current_time__get_current_time"),
             ToolInvocation(call_id="2", tool_name="search__go"),
         ]
         self.assertTrue(batch_includes_current_time(batch))

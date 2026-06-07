@@ -604,7 +604,6 @@ def build_session(
 
     harness_enabled: bool = False,
 
-    current_time_tool_enabled: bool = True,
 
 ) -> AgentSession:
     """
@@ -627,16 +626,9 @@ def build_session(
         listeners: 运行时监听列表
         memory: 已构造的分层记忆；未传则为 None
         harness_enabled: 为 False 时不向模型注册 Harness 沙箱工具
-        current_time_tool_enabled: 为 True 时注册 ``builtin__current_time``（与 Harness 无关）
-
     Returns:
         可运行的 AgentSession
     """
-
-    from ai_agent.builtin_tools import (
-        build_app_builtin_tools,
-        harness_current_time_tool_name,
-    )
 
     skill_manager: SkillManager | None = None
 
@@ -658,13 +650,9 @@ def build_session(
 
     registry = ToolRegistry()
 
-    base_tools = build_app_builtin_tools(current_time=current_time_tool_enabled)
+    base_tools: list = []
     if harness_enabled:
-        harness_tools = harness.build_tools()
-        if current_time_tool_enabled:
-            drop = harness_current_time_tool_name()
-            harness_tools = [tool for tool in harness_tools if tool.name != drop]
-        base_tools = base_tools + harness_tools
+        base_tools = harness.build_tools()
     registry.set_base_tools(base_tools)
 
     if skill_manager is not None:

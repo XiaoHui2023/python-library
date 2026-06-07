@@ -10,7 +10,7 @@ class TestHarnessPlanningPrompt(unittest.TestCase):
         text = PLANNING_SYSTEM_PROMPT.strip()
         self.assertIn("JSON", text)
         self.assertIn("step-1", text)
-        self.assertIn("builtin__current_time", text)
+        self.assertIn("current_time__get_current_time", text)
         self.assertIn("勿写死具体公历日期", text)
         self.assertIn("brief", text)
 

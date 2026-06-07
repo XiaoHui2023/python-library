@@ -6,25 +6,24 @@ import unittest
 from pathlib import Path
 
 from examples._support.llm_config import load_llm_config_from_env_map
-from examples._support.mcp_json_config import (
-    load_mcp_json_document,
-    mcp_servers_payload,
-)
+from examples._support.load_example_mcp import load_example_mcp_json
 
 
-class McpJsonConfigTests(unittest.TestCase):
-    def test_mcp_servers_payload(self) -> None:
+class TestLoadExampleMcpJson(unittest.TestCase):
+    def test_load_example_mcp_json(self) -> None:
         document = {
             "mcpServers": {
-                "demo": {"command": "python", "args": [], "env": {"BOCHA_API_KEY": "b"}},
+                "demo": {"command": "python", "args": []},
             },
         }
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "mcp.json"
-            path.write_text(json.dumps(document), encoding="utf-8")
-            loaded = load_mcp_json_document(path)
-        payload = mcp_servers_payload(loaded)
-        self.assertIn("demo", payload["mcpServers"])
+            example_dir = Path(tmp)
+            (example_dir / "mcp.json").write_text(
+                json.dumps(document),
+                encoding="utf-8",
+            )
+            loaded = load_example_mcp_json(example_dir)
+        self.assertIn("demo", loaded["mcpServers"])
 
     def test_rejects_agent_env(self) -> None:
         document = {
@@ -32,10 +31,13 @@ class McpJsonConfigTests(unittest.TestCase):
             "mcpServers": {"demo": {"command": "python", "args": []}},
         }
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "mcp.json"
-            path.write_text(json.dumps(document), encoding="utf-8")
+            example_dir = Path(tmp)
+            (example_dir / "mcp.json").write_text(
+                json.dumps(document),
+                encoding="utf-8",
+            )
             with self.assertRaises(ValueError):
-                load_mcp_json_document(path)
+                load_example_mcp_json(example_dir)
 
     def test_load_llm_config_from_env_map(self) -> None:
         cfg = load_llm_config_from_env_map(

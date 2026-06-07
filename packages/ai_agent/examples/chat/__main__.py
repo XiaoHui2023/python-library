@@ -8,6 +8,7 @@ from ai_agent import AgentApp, RunInputPacket
 
 from examples._support.demo_sandbox import clear_demo_sessions, session_ids_in_script
 from examples._support.llm_config import load_llm_config
+from examples._support.load_example_mcp import prepare_and_load_mcp
 from examples._support.print_listener import create_print_listener
 from examples._support.print_timing import ExamplePrintTiming
 
@@ -17,7 +18,6 @@ _RULE_PATH = _EXAMPLE_DIR / "rules" / "assistant.md"
 
 _ScriptStep = tuple[str, str, str, bool]
 
-# 记忆与会话隔离：work 记住 Alice → 回忆 → private 不应串会话 → 回到 work
 _SCRIPT_STEPS: tuple[_ScriptStep, ...] = (
     ("work", "Alice", "我叫 Alice，请记住我的名字。", False),
     ("work", "Alice", "我叫什么名字？", False),
@@ -26,7 +26,7 @@ _SCRIPT_STEPS: tuple[_ScriptStep, ...] = (
 )
 
 
-def _build_app(cfg) -> tuple[AgentApp, ExamplePrintTiming]:
+def _build_app(cfg, mcp_tools: list) -> tuple[AgentApp, ExamplePrintTiming]:
     _SANDBOX.mkdir(parents=True, exist_ok=True)
     timing = ExamplePrintTiming()
     listener, _ = create_print_listener(
@@ -36,6 +36,8 @@ def _build_app(cfg) -> tuple[AgentApp, ExamplePrintTiming]:
     )
     app = AgentApp(
         _SANDBOX,
+        harness_enabled=False,
+        planning_enabled=False,
         rule_paths=[_RULE_PATH],
         api_key=cfg.api_key,
         model=cfg.model,
@@ -46,9 +48,9 @@ def _build_app(cfg) -> tuple[AgentApp, ExamplePrintTiming]:
         memory_api_key=cfg.api_key,
         memory_model=cfg.model,
         memory_base_url=cfg.base_url,
-        harness_enabled=False,
         listeners=listener,
     )
+    app.set_shared_extra_tools(mcp_tools)
     return app, timing
 
 
@@ -102,8 +104,12 @@ async def _run_script(app: AgentApp, timing: ExamplePrintTiming) -> int:
 
 async def _run() -> int:
     cfg = load_llm_config(_EXAMPLE_DIR)
-    app, timing = _build_app(cfg)
-    return await _run_script(app, timing)
+    tools, loader = await prepare_and_load_mcp(_EXAMPLE_DIR)
+    try:
+        app, timing = _build_app(cfg, tools)
+        return await _run_script(app, timing)
+    finally:
+        await loader.close()
 
 
 def main() -> None:
