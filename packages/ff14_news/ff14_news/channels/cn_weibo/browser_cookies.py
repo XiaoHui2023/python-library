@@ -14,7 +14,6 @@ _MOBILE_HOME = "https://m.weibo.cn/"
 
 def fetch_mobile_cookies(
     *,
-    proxy_url: str | None = None,
     headless: bool = True,
     storage_state_path: Path | None = None,
     timeout_seconds: float = 60.0,
@@ -22,7 +21,6 @@ def fetch_mobile_cookies(
     """用 Playwright 打开 m.weibo.cn 并返回 Cookie 字典。
 
     Args:
-        proxy_url: HTTP 代理，如 ``http://127.0.0.1:7897``
         headless: 是否无头运行 Chromium
         storage_state_path: 可复用的 Playwright storage state 路径
         timeout_seconds: 页面加载超时秒数
@@ -32,7 +30,7 @@ def fetch_mobile_cookies(
     except ImportError as exc:
         raise ImportError(
             "Playwright 未安装。请执行：pip install crawl4weibo && "
-            "python -m example.ensure_browser --proxy 127.0.0.1:7897"
+            "python -m example.ensure_browser"
         ) from exc
 
     storage = None
@@ -47,8 +45,6 @@ def fetch_mobile_cookies(
             "--disable-setuid-sandbox",
         ],
     }
-    if proxy_url:
-        launch_kwargs["proxy"] = {"server": proxy_url}
 
     cookies_dict: dict[str, str] = {}
     with sync_playwright() as playwright:

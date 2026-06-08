@@ -6,8 +6,10 @@ from ff14_news.ff14_news import FF14News
 from ff14_news.models import (
     NewsArticle,
     NewsBlockType,
+    NewsChannelFetchError,
     NewsContentBlock,
     NewsFeed,
+    NewsFeedBundle,
     NewsListItem,
 )
 
@@ -19,7 +21,9 @@ __all__ = [
     "JpOfficialChannel",
     "NewsArticle",
     "NewsBlockType",
+    "NewsChannelFetchError",
     "NewsContentBlock",
     "NewsFeed",
+    "NewsFeedBundle",
     "NewsListItem",
 ]

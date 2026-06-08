@@ -13,7 +13,6 @@ from ff14_news.models import NewsArticle, NewsBlockType, NewsContentBlock, NewsL
 _TAG_RE = re.compile(r"<[^>]+>")
 _FULL_TEXT_RE = re.compile(r"…?\.\.\.?全文\s*$|…全文\s*$")
 _TITLE_MAX_LEN = 80
-_SUMMARY_MAX_LEN = 200
 
 
 def effective_mblog(mblog: dict) -> dict:
@@ -56,14 +55,13 @@ def mblog_to_list_item(mblog: dict, *, channel_id: str) -> NewsListItem:
     article_id = mblog_id(mblog)
     effective = effective_mblog(mblog)
     title = _title_from_text(effective)
-    summary = _summary_from_text(effective)
     cover = _first_pic_url(effective)
     return NewsListItem(
         channel_id=channel_id,
         id=article_id,
         title=title,
         publish_date=parse_created_at(str(mblog.get("created_at") or "")),
-        summary=summary,
+        summary="",
         cover_image_url=cover,
         source_page_url=DETAIL_URL_TEMPLATE.format(article_id=article_id),
     )
@@ -78,14 +76,13 @@ def mblog_to_article(
     effective = effective_mblog(mblog)
     blocks = blocks_from_mblog(mblog)
     title = _title_from_text(effective)
-    summary = _summary_from_blocks(blocks) or _summary_from_text(effective)
     cover = _first_pic_url(effective)
     return NewsArticle(
         channel_id=channel_id,
         id=article_id,
         title=title,
         publish_date=parse_created_at(str(mblog.get("created_at") or "")),
-        summary=summary,
+        summary="",
         category_code=None,
         cover_image_url=cover,
         source_page_url=PERMALINK_TEMPLATE.format(article_id=article_id),
@@ -120,24 +117,6 @@ def _title_from_text(mblog: dict) -> str:
     if len(first_line) <= _TITLE_MAX_LEN:
         return first_line
     return first_line[: _TITLE_MAX_LEN - 1] + "…"
-
-
-def _summary_from_text(mblog: dict) -> str:
-    plain = _plain_text(str(mblog.get("text") or ""))
-    plain = _FULL_TEXT_RE.sub("", plain).strip()
-    if len(plain) <= _SUMMARY_MAX_LEN:
-        return plain
-    return plain[: _SUMMARY_MAX_LEN - 1] + "…"
-
-
-def _summary_from_blocks(blocks: list[NewsContentBlock]) -> str:
-    for block in blocks:
-        if block.text and block.text.strip():
-            text = block.text.strip()
-            if len(text) <= _SUMMARY_MAX_LEN:
-                return text
-            return text[: _SUMMARY_MAX_LEN - 1] + "…"
-    return ""
 
 
 def _first_pic_url(mblog: dict) -> str | None:

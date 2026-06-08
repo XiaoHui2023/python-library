@@ -9,9 +9,6 @@ __pycache__/
 dist/
 build/
 
-# example 抓取产物（含下载图片）
-example/output/
-
 # 微博登录 Cookie / Playwright 会话（本地私密）
 example/weibo_cookie.txt
 example/.weibo_browser_state.json

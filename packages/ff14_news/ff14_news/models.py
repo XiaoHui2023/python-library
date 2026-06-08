@@ -62,6 +62,27 @@ class NewsFeed(BaseModel):
     )
 
 
+class NewsChannelFetchError(BaseModel):
+    """单渠道抓取失败记录。"""
+
+    channel_id: str = Field(description="渠道标识")
+    message: str = Field(description="失败原因")
+
+
+class NewsFeedBundle(BaseModel):
+    """已启用渠道的并行抓取结果。"""
+
+    fetched_at: datetime = Field(description="整包抓取完成时间")
+    feeds: dict[str, NewsFeed] = Field(
+        default_factory=dict,
+        description="按 channel_id 索引的成功 feed",
+    )
+    errors: list[NewsChannelFetchError] = Field(
+        default_factory=list,
+        description="失败渠道及原因",
+    )
+
+
 class NewsListItem(BaseModel):
     """列表项元数据（未展开正文）。"""
 
