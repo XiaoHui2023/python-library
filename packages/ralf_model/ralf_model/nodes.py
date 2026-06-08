@@ -43,6 +43,7 @@ class BlockNode(BaseModel):
     - 定义体：``block 名 { ... }``
     - 简单映射：``block 名 @地址;``
     - 实例化：``block 左名 = 右名 [ (路径) ] [ @地址 ] ;`` 或带 ``{ ... }``
+    - 带路径实例化：``block 名 (hdl路径) @地址;``（无 ``=`` 右名）
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -54,7 +55,7 @@ class BlockNode(BaseModel):
     )
     rhs_paren_path: str | None = Field(
         default=None,
-        description="紧跟在 rhs_head 后的圆括号路径内容（不含括号）",
+        description="圆括号路径（不含括号）：``=`` 形式下紧跟 rhs_head；无 ``=`` 时紧跟 block 名",
     )
     base_address: int | None = Field(
         default=None,
@@ -81,7 +82,7 @@ class SystemNode(BaseModel):
     )
     rhs_paren_path: str | None = Field(
         default=None,
-        description="紧跟在 rhs_head 后的圆括号路径内容（不含括号）",
+        description="圆括号路径（不含括号）：``=`` 形式下紧跟 rhs_head；无 ``=`` 时紧跟 system 名",
     )
     base_address: int | None = Field(
         default=None,

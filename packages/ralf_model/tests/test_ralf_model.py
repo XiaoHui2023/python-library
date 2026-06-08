@@ -117,6 +117,24 @@ block top {
         doc2 = parse_ralf(dump_ralf(doc))
         self.assertEqual(doc.model_dump(), doc2.model_dump())
 
+    def test_block_instance_paren_path_at_address(self) -> None:
+        src = """
+block top {
+  block xxx (xxx.xxx) @'h0;
+}
+"""
+        doc = parse_ralf(src)
+        sub = doc.blocks[0].blocks[0]
+        self.assertEqual(sub.name, "xxx")
+        self.assertIsNone(sub.rhs_head)
+        self.assertEqual(sub.rhs_paren_path, "xxx.xxx")
+        self.assertEqual(sub.base_address, 0)
+        self.assertFalse(sub.has_body)
+        out = dump_ralf(doc)
+        self.assertIn("block xxx (xxx.xxx) @'h0;", out)
+        doc2 = parse_ralf(out)
+        self.assertEqual(doc.model_dump(), doc2.model_dump())
+
     def test_block_equals_instance_path_at_address(self) -> None:
         src = """
 block top {
@@ -314,6 +332,29 @@ class ParseErrorTests(unittest.TestCase):
             top.write_text(filler + '\nsource "inc/broken.ralf"\n', encoding="utf-8")
             with self.assertRaises(RalfParseError) as ctx:
                 load_ralf_file(top)
+            self.assertEqual(ctx.exception.line, 4)
+
+    def test_parse_error_line_after_source_in_parent_file(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            inc = root / "inc"
+            inc.mkdir()
+            (inc / "extra.ralf").write_text(
+                "// included line 1\n// included line 2\n",
+                encoding="utf-8",
+            )
+            top = root / "top.ralf"
+            top.write_text(
+                "// header\n"
+                'source "inc/extra.ralf"\n'
+                "block soc {\n"
+                "  ???\n"
+                "}\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(RalfParseError) as ctx:
+                load_ralf_file(top)
+            self.assertEqual(ctx.exception.path, top.resolve())
             self.assertEqual(ctx.exception.line, 4)
 
 

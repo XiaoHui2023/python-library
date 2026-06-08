@@ -109,13 +109,14 @@ def expand_ralf_sources(
     include_paths: Sequence[Path] = (),
     encoding: str = "utf-8",
     _chain: tuple[Path, ...] = (),
-) -> tuple[str, list[Path]]:
+) -> tuple[str, list[tuple[Path, int]]]:
     """将 Tcl 风格 ``source path`` 递归展开为单段 RALF 文本后再交给 ``parse_ralf``。
 
     ``current_file`` 用于确定相对路径的基准目录（通常为 ``path.parent``），并参与循环检测。
     从内存加载字符串时可使用 ``base_dir / \"__inline__.ralf\"`` 这类占位路径。
 
-    返回 ``(展开后文本, 行来源)``：``行来源[i]`` 对应展开结果第 ``i+1`` 行的源文件路径。
+    返回 ``(展开后文本, 行来源)``：``行来源[i]`` 为 ``(源文件路径, 该文件内行号)``，
+    对应展开结果第 ``i+1`` 行；``source`` 指令行本身不占展开结果行，但其行号仍计入宿主文件行序。
     """
     cf = current_file.resolve()
     if cf in _chain:
@@ -125,17 +126,17 @@ def expand_ralf_sources(
     inc = tuple(Path(p).resolve() for p in include_paths)
 
     out: list[str] = []
-    line_sources: list[Path] = []
-    for line in text.splitlines(keepends=True):
+    line_origins: list[tuple[Path, int]] = []
+    for line_no, line in enumerate(text.splitlines(keepends=True), start=1):
         spec = _parse_source_argument(line)
         if spec is None:
             out.append(line)
-            line_sources.append(cf)
+            line_origins.append((cf, line_no))
             continue
 
         inner_path = resolve_source_path(spec, base_dir=cf.parent, include_paths=inc)
         inner_text = inner_path.read_text(encoding=encoding)
-        expanded_inner, inner_sources = expand_ralf_sources(
+        expanded_inner, inner_origins = expand_ralf_sources(
             inner_text,
             current_file=inner_path,
             include_paths=inc,
@@ -143,9 +144,11 @@ def expand_ralf_sources(
             _chain=chain,
         )
         out.append(expanded_inner)
-        line_sources.extend(inner_sources)
+        line_origins.extend(inner_origins)
         if expanded_inner and not expanded_inner.endswith("\n"):
             out.append("\n")
-            line_sources.append(inner_sources[-1] if inner_sources else inner_path)
+            line_origins.append(
+                inner_origins[-1] if inner_origins else (inner_path, 1)
+            )
 
-    return "".join(out), line_sources
+    return "".join(out), line_origins

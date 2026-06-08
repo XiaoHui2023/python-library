@@ -14,7 +14,7 @@ class _Parser:
         text: str,
         *,
         path: Path | None = None,
-        line_sources: Sequence[Path] | None = None,
+        line_origins: Sequence[tuple[Path, int]] | None = None,
     ) -> None:
         self._s = text
         self._n = len(text)
@@ -22,7 +22,7 @@ class _Parser:
         self.line = 1
         self.col = 1
         self._path = path
-        self._line_sources = line_sources
+        self._line_origins = line_origins
 
     def _advance(self, n: int = 1) -> None:
         for _ in range(n):
@@ -42,14 +42,8 @@ class _Parser:
     def _error_location(self) -> tuple[Path | None, int]:
         path = self._path
         line = self.line
-        if self._line_sources and 0 < self.line <= len(self._line_sources):
-            path = self._line_sources[self.line - 1]
-            local = 1
-            idx = self.line - 2
-            while idx >= 0 and self._line_sources[idx] == path:
-                local += 1
-                idx -= 1
-            line = local
+        if self._line_origins and 0 < self.line <= len(self._line_origins):
+            path, line = self._line_origins[self.line - 1]
         return path, line
 
     def _error(self, msg: str) -> None:
@@ -280,6 +274,11 @@ class _Parser:
         name = self.read_hierarchical_block_name()
         self.skip_ws_and_comments()
 
+        name_paren: str | None = None
+        if self._peek() == "(":
+            name_paren = self.read_round_paren_inner()
+            self.skip_ws_and_comments()
+
         if self._peek() == "@":
             self._advance()
             addr = self.parse_integer_value()
@@ -288,6 +287,7 @@ class _Parser:
                 self._advance()
                 return SystemNode(
                     name=name,
+                    rhs_paren_path=name_paren,
                     base_address=addr,
                     has_body=False,
                     systems=[],
@@ -299,6 +299,7 @@ class _Parser:
                 self.expect_char("}")
                 return SystemNode(
                     name=name,
+                    rhs_paren_path=name_paren,
                     base_address=addr,
                     has_body=True,
                     bytes_width=bw,
@@ -308,6 +309,8 @@ class _Parser:
             self._error("system @地址 之后应为 ; 或 {")
 
         if self._peek() == "=":
+            if name_paren is not None:
+                self._error("system 名后 `(路径)` 与 `=` 实例化不能同时使用")
             self._advance()
             self.skip_ws_and_comments()
             rhs_head, rhs_path, addr_rhs = self.parse_block_rhs_after_equals()
@@ -345,12 +348,13 @@ class _Parser:
             self.expect_char("}")
             return SystemNode(
                 name=name,
+                rhs_paren_path=name_paren,
                 has_body=True,
                 bytes_width=bw,
                 systems=subs_sys,
                 blocks=subs_blk,
             )
-        self._error("system 名称之后应为 @、= 或 {")
+        self._error("system 名称之后应为 `(路径)`、`@`、`=` 或 `{")
 
     def _parse_system_body(
         self,
@@ -380,6 +384,11 @@ class _Parser:
         name = self.read_hierarchical_block_name()
         self.skip_ws_and_comments()
 
+        name_paren: str | None = None
+        if self._peek() == "(":
+            name_paren = self.read_round_paren_inner()
+            self.skip_ws_and_comments()
+
         if self._peek() == "@":
             self._advance()
             addr = self.parse_integer_value()
@@ -388,6 +397,7 @@ class _Parser:
                 self._advance()
                 return BlockNode(
                     name=name,
+                    rhs_paren_path=name_paren,
                     base_address=addr,
                     has_body=False,
                     registers=[],
@@ -399,6 +409,7 @@ class _Parser:
                 self.expect_char("}")
                 return BlockNode(
                     name=name,
+                    rhs_paren_path=name_paren,
                     base_address=addr,
                     has_body=True,
                     bytes_width=bw,
@@ -408,6 +419,8 @@ class _Parser:
             self._error("block @地址 之后应为 ; 或 {")
 
         if self._peek() == "=":
+            if name_paren is not None:
+                self._error("block 名后 `(路径)` 与 `=` 实例化不能同时使用")
             self._advance()
             self.skip_ws_and_comments()
             rhs_head, rhs_path, addr_rhs = self.parse_block_rhs_after_equals()
@@ -445,12 +458,13 @@ class _Parser:
             self.expect_char("}")
             return BlockNode(
                 name=name,
+                rhs_paren_path=name_paren,
                 has_body=True,
                 bytes_width=bw,
                 registers=regs,
                 blocks=subs,
             )
-        self._error("block 名称之后应为 @、= 或 {")
+        self._error("block 名称之后应为 `(路径)`、`@`、`=` 或 `{`")
 
     def _parse_block_body(self) -> tuple[int | None, list[RegisterNode], list[BlockNode]]:
         bw: int | None = None
@@ -676,10 +690,10 @@ def parse_ralf(
     text: str,
     *,
     path: Path | None = None,
-    line_sources: Sequence[Path] | None = None,
+    line_origins: Sequence[tuple[Path, int]] | None = None,
 ) -> RalfDocument:
     """将 RALF 源文本解析为 `RalfDocument`。"""
-    p = _Parser(text, path=path, line_sources=line_sources)
+    p = _Parser(text, path=path, line_origins=line_origins)
     doc = p.parse_document()
     return doc
 

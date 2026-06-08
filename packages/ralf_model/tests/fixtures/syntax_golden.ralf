@@ -1,0 +1,58 @@
+// syntax_golden.ralf — ralf_model 语法回归汇编（见 .cursor/skills/ralf-model-syntax）
+
+/* 块注释：顶层 system + 嵌套 */
+system chip {
+  bytes 16;
+  system cpu @0 {
+    block core {
+      bytes 4;
+      register STATUS (cpu.status) @0 {
+        bytes 4;
+        field run {}
+        field err @1 {
+          bits 1;
+          access ro;
+          reset 'h0;
+        }
+      }
+    }
+  }
+  block uart_blk = uart_tpl (dut.uart0) @'h1000;
+  block gpio (soc.gpio) @'h2000;
+}
+
+block uart_tpl {
+  bytes 4;
+  register CTRL @'h0 {
+    bytes 4;
+    field ena(hdl.uart.en) @0 {
+      bits 1;
+      access rw;
+      reset 1'b0;
+      enum { ON = 1, OFF = 0 };
+    }
+    field mode @8 {
+      bits 4;
+      access rw;
+      reset 4'h3;
+      hard_reset 4'h0;
+    }
+  }
+  register DATA @'h4 {
+    bytes 4;
+    field word @0 {
+      bits 32;
+      access rw;
+      reset 32'hDEAD_BEEF;
+      volatile true;
+    }
+  }
+}
+
+block array_name_demo {
+  block inst = peer_blk[2];
+}
+
+block peer_blk {
+  bytes 1;
+}

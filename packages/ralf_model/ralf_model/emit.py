@@ -51,9 +51,9 @@ def _emit_block_open_line(b: BlockNode, indent: str) -> str:
         line += f" = {b.rhs_head}"
         if b.rhs_paren_path is not None:
             line += f" ({b.rhs_paren_path})"
-        if b.base_address is not None:
-            line += f" @{_fmt_at_int(b.base_address)}"
-    elif b.base_address is not None:
+    elif b.rhs_paren_path is not None:
+        line += f" ({b.rhs_paren_path})"
+    if b.base_address is not None:
         line += f" @{_fmt_at_int(b.base_address)}"
     return line
 
@@ -64,9 +64,9 @@ def _emit_system_open_line(s: SystemNode, indent: str) -> str:
         line += f" = {s.rhs_head}"
         if s.rhs_paren_path is not None:
             line += f" ({s.rhs_paren_path})"
-        if s.base_address is not None:
-            line += f" @{_fmt_at_int(s.base_address)}"
-    elif s.base_address is not None:
+    elif s.rhs_paren_path is not None:
+        line += f" ({s.rhs_paren_path})"
+    if s.base_address is not None:
         line += f" @{_fmt_at_int(s.base_address)}"
     return line
 
