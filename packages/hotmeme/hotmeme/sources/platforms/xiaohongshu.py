@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from hotmeme.models import XiaohongshuPolicy
-from hotmeme.pipeline.diagnostics import XhsKeywordFetchStat
+from hotmeme.models import XiaohongshuPolicy, XhsKeywordFetchStat
 from hotmeme.sources.parsers.xiaohongshu import (
     parse_xhs_search_notes_traced,
     parse_xhs_tag_name,

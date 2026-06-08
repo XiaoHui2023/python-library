@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from hotmeme.models import ImageItem
-from hotmeme.pipeline.diagnostics import XhsKeywordFetchStat
+from hotmeme.models import ImageItem, XhsKeywordFetchStat
 
 
 @dataclass

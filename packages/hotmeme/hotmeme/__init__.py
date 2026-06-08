@@ -21,7 +21,17 @@ from hotmeme.models import (
 )
 from hotmeme.pipeline import fetch_hot_posts
 from hotmeme.protocols import HotPostSource
-from hotmeme.renderer import MemeOutputBatch, MemeOutputPacket, OutputMediaKind, render_item, render_items
+from hotmeme.renderer import (
+    ContentBlockKind,
+    MemeOutputBatch,
+    MemeOutputPacket,
+    OutputMediaKind,
+    PostContent,
+    PostContentBlock,
+    PostReference,
+    render_item,
+    render_items,
+)
 from hotmeme.sources.platforms import supported_platforms
 
 __all__ = [
@@ -34,9 +44,13 @@ __all__ = [
     "ImageFeed",
     "ImageItem",
     "MediaType",
+    "ContentBlockKind",
     "MemeOutputBatch",
     "MemeOutputPacket",
     "OutputMediaKind",
+    "PostContent",
+    "PostContentBlock",
+    "PostReference",
     "PipelinePolicy",
     "Platform",
     "ProviderId",

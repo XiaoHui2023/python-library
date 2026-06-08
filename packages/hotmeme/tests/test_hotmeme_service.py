@@ -41,6 +41,24 @@ def test_crawl_once_initial_and_delta(mock_fetch_round) -> None:
     assert [item.id for item in second.new_items] == ["c"]
 
 
+@patch("hotmeme.hotmeme.materialize_image_items_traced")
+@patch.object(HotMeme, "_fetch_round")
+def test_render_output_materializes_after_fetch(
+    mock_fetch_round,
+    mock_materialize,
+) -> None:
+    item = _sample_image("a")
+    mock_fetch_round.return_value = FetchedRound(
+        items=[item],
+        providers_ok=["tikhub"],
+    )
+    mock_materialize.return_value = ([item], [], None)
+    client = HotMeme()
+    packet = client.crawl_once()
+    client.render_output(packet.fetched_items)
+    mock_materialize.assert_called_once()
+
+
 @patch.object(HotMeme, "_fetch_round")
 def test_reset_seen(mock_fetch_round) -> None:
     mock_fetch_round.return_value = FetchedRound(

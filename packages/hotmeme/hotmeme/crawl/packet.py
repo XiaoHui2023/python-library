@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 
-from hotmeme.models import ImageItem, TikHubApiCall
+from hotmeme.models import FetchDiagnostics, ImageItem, TikHubApiCall
 
 
 
@@ -69,6 +69,14 @@ class HotMemeCrawlPacket(BaseModel):
         default=False,
 
         description="是否为实例创建后的首次爬取",
+
+    )
+
+    diagnostics: FetchDiagnostics | None = Field(
+
+        default=None,
+
+        description="解析与过滤阶段统计（调试）",
 
     )
 

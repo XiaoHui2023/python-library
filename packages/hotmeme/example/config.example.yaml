@@ -10,11 +10,18 @@ pipeline:
 xiaohongshu:
   tags_enabled: false
   search_tags:
-    - 搞笑
+    - 搞笑日常
   page: 1
-  sort_type: popularity_descending
+  sort_type: general
   time_filter: 一天内
-  note_type: 不限
+  note_type: 普通笔记
+  min_score: 500
+
+assets:
+  download: true
+  timeout: 30
+  max_images_per_item: 3
+  download_workers: 4
 
 fetch:
   per_source_timeout: 30

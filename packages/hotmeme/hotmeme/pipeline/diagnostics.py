@@ -1,59 +1,29 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from typing import TYPE_CHECKING
 
 from hotmeme.filter import (
     dedup_items,
     filter_displayable_media,
-    filter_low_interest_items,
+    filter_media_types,
+    filter_min_score_items,
     filter_nsfw_items,
     filter_risk_items,
 )
+from hotmeme.models import MediaType
 from hotmeme.merge.rank import sort_items
-from hotmeme.models import ImageItem
+from hotmeme.models import FetchDiagnostics, ImageItem, PostProcessStageStat
 
-
-class PostProcessStageStat(BaseModel):
-    """单步后处理进出条数。"""
-
-    model_config = ConfigDict(extra="forbid")
-
-    stage: str = Field(description="阶段名")
-    in_count: int = Field(description="进入条数")
-    out_count: int = Field(description="离开条数")
-    dropped: int = Field(description="丢弃条数")
-
-
-class XhsKeywordFetchStat(BaseModel):
-    """单次小红书 tag 搜索的解析统计。"""
-
-    model_config = ConfigDict(extra="forbid")
-
-    keyword: str = Field(description="搜索关键词，如 #搞笑#")
-    search_tag: str = Field(description="话题 tag 名")
-    api_list_items: int = Field(description="响应 data.items 列表长度")
-    note_candidates: int = Field(description="识别到的笔记卡片数")
-    parsed_with_media: int = Field(description="解析出可展示媒体的条数")
-    no_media: int = Field(description="有笔记但无封面/视频 URL")
-    tag_dedup_skipped: int = Field(description="跨 tag 合并时因 note id 重复跳过")
-    merged_items: int = Field(description="本 keyword 新并入条数")
-
-
-class FetchDiagnostics(BaseModel):
-    """一轮拉取：解析与过滤诊断。"""
-
-    model_config = ConfigDict(extra="forbid")
-
-    parsed_before_filter: int = Field(default=0, description="进入 post_process 前条数")
-    final_count: int = Field(default=0, description="post_process 后条数")
-    xhs_keywords: list[XhsKeywordFetchStat] = Field(default_factory=list)
-    post_process: list[PostProcessStageStat] = Field(default_factory=list)
+if TYPE_CHECKING:
+    from hotmeme.renderer.models import MemeOutputBatch
 
 
 def post_process_traced(
     items: list[ImageItem],
     *,
     allow_nsfw: bool,
+    media_types: list[MediaType] | None = None,
+    platform_min_scores: dict[str, float] | None = None,
 ) -> tuple[list[ImageItem], list[PostProcessStageStat]]:
     """热帖聚合后处理，并记录每步丢弃条数。"""
     stages: list[PostProcessStageStat] = []
@@ -73,9 +43,20 @@ def post_process_traced(
         )
 
     _step("displayable", filter_displayable_media)
+    _step(
+        "media_types",
+        lambda batch: filter_media_types(batch, allowed=media_types),
+    )
     _step("nsfw", lambda batch: filter_nsfw_items(batch, allow_nsfw=allow_nsfw))
     _step("risk", filter_risk_items)
-    _step("low_interest", filter_low_interest_items)
+    min_scores = platform_min_scores or {}
+    _step(
+        "min_score",
+        lambda batch: filter_min_score_items(
+            batch,
+            platform_min_scores=min_scores,
+        ),
+    )
     _step("dedup", dedup_items)
     _step("rank", sort_items)
     return current, stages
@@ -120,5 +101,35 @@ def format_fetch_diagnostics(diagnostics: FetchDiagnostics) -> list[str]:
         and diagnostics.post_process
     ):
         lines.append("  提示: 解析有条目但过滤后为空，优先查 post_process 各阶段")
+        min_score_stage = next(
+            (stage for stage in diagnostics.post_process if stage.stage == "min_score"),
+            None,
+        )
+        if (
+            min_score_stage is not None
+            and min_score_stage.in_count > 0
+            and min_score_stage.out_count == 0
+        ):
+            lines.append(
+                "  提示: min_score 丢弃全部时常见原因为 score 未解析（互动数在 items 外层）",
+            )
+    lines.append("")
+    return lines
+
+
+def format_materialize_diagnostics(batch: MemeOutputBatch) -> list[str]:
+    """格式化渲染前图片下载诊断行。"""
+    stage = batch.materialize_stage
+    errors = batch.materialize_errors
+    if stage is None and not errors:
+        return []
+    lines = ["=== 图片下载（渲染前）==="]
+    if stage is not None:
+        lines.append(
+            f"  materialize: {stage.in_count} → {stage.out_count} "
+            f"(丢弃 {stage.dropped})",
+        )
+    for err in errors:
+        lines.append(f"  {err}")
     lines.append("")
     return lines

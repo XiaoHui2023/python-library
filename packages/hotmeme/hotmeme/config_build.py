@@ -31,6 +31,7 @@ def build_config(
     xhs_sort_type: str | None = None,
     xhs_time_filter: str | None = None,
     xhs_search_tags: list[str] | None = None,
+    xhs_min_score: float | None = None,
 ) -> HotMemeModels:
     """由平铺入参或配置文件组装根配置。"""
     xhs_overrides: dict[str, object] = {}
@@ -44,6 +45,8 @@ def build_config(
         xhs_overrides["time_filter"] = xhs_time_filter
     if xhs_search_tags is not None:
         xhs_overrides["search_tags"] = xhs_search_tags
+    if xhs_min_score is not None:
+        xhs_overrides["min_score"] = xhs_min_score
 
     if config_path is not None:
         models = load_config(config_path)

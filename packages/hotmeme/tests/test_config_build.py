@@ -17,7 +17,7 @@ def test_build_config_merges_api_key_from_file(tmp_path: Path) -> None:
 def test_build_config_overrides_platforms_from_file(tmp_path: Path) -> None:
     config = tmp_path / "cfg.yaml"
     config.write_text(
-        "pipeline:\n  platforms:\n    - douyin\n    - xiaohongshu\n",
+        "pipeline:\n  platforms:\n    - bilibili\n    - xiaohongshu\n",
         encoding="utf-8",
     )
     models = build_config(config_path=config, platforms=["xiaohongshu"])

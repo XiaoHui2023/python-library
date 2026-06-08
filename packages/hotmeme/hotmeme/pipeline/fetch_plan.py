@@ -4,12 +4,6 @@ from hotmeme.models import DEFAULT_XHS_SEARCH_TAGS, XiaohongshuPolicy
 from hotmeme.post_process import LOCAL_FILTER_CHAIN
 from hotmeme.sources.parsers.xiaohongshu import format_xhs_tag_query
 
-_DOUYIN_HOT = "GET /api/v1/douyin/web/fetch_hot_search_result (1 次)"
-_DOUYIN_SEARCH = (
-    "POST /api/v1/douyin/search/fetch_general_search_v2"
-    " (热榜首词, sort_type=1, publish_time=1，1 次)"
-)
-
 
 def _xhs_tag_search_steps(policy: XiaohongshuPolicy) -> list[str]:
     keywords = policy.search_keywords()
@@ -21,24 +15,21 @@ def _xhs_tag_search_steps(policy: XiaohongshuPolicy) -> list[str]:
         steps.append(
             "GET /api/v1/xiaohongshu/app_v2/search_notes"
             f" ({keyword}, page={policy.page}, sort_type={policy.sort_type},"
-            f" time_filter={policy.time_filter}，1 次)"
+            f" time_filter={policy.time_filter}, note_type={policy.note_type}，1 次)"
         )
     return steps
 
 
 _PLATFORM_STEPS_BUILDERS = {
-    "douyin": lambda _xhs: [_DOUYIN_HOT, _DOUYIN_SEARCH],
     "xiaohongshu": _xhs_tag_search_steps,
 }
 
 _MIN_CALLS_BUILDERS = {
-    "douyin": lambda _xhs: 2,
     "xiaohongshu": lambda xhs: xhs.tikhub_call_count(),
 }
 
 API_LAYER_FILTERS: dict[str, str] = {
-    "douyin": "API: sort_type=1(综合), publish_time=1(一天内)；来源层 NSFW",
-    "xiaohongshu": "API: tag 搜索 + sort_type + time_filter；来源层 NSFW",
+    "xiaohongshu": "API: tag 搜索 + sort_type + time_filter + note_type；来源层 NSFW",
 }
 
 

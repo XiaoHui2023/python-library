@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -7,7 +8,9 @@ from hotmeme.config_build import build_config
 from hotmeme.crawl.delta import dedupe_images_by_id, partition_new_images
 from hotmeme.crawl.packet import HotMemeCrawlPacket
 from hotmeme.crawl.round import FetchedRound
+from hotmeme.assets import materialize_image_items_traced
 from hotmeme.models import (
+    AssetsPolicy,
     HotMemeModels,
     HotPostsQuery,
     ImageFeed,
@@ -42,6 +45,7 @@ class HotMeme:
         xhs_sort_type: str | None = None,
         xhs_time_filter: str | None = None,
         xhs_search_tags: list[str] | None = None,
+        xhs_min_score: float | None = None,
     ) -> None:
         """构造聚合器。
 
@@ -52,16 +56,17 @@ class HotMeme:
             base_url: TikHub API 根地址。
             source_timeout: TikHub 请求超时秒数。
             allow_nsfw: 是否允许 NSFW 内容。
-            platforms: 拉帖平台列表；默认小红书、抖音。
+            platforms: 拉帖平台列表；默认仅小红书。
             per_source_timeout: 单平台聚合超时秒数。
             retries: 失败重试次数。
             skip_failed_providers: 单平台失败时是否跳过并继续。
             xiaohongshu: 小红书策略整块覆盖。
             xhs_tags_enabled: 是否对 search_tags 中每个 tag 各搜一次。
             xhs_page: 小红书搜索页码。
-            xhs_sort_type: 小红书排序，默认最多点赞。
+            xhs_sort_type: 小红书排序，默认综合。
             xhs_time_filter: 小红书发布时间筛选。
             xhs_search_tags: 小红书话题 tag 列表。
+            xhs_min_score: 小红书最低互动分（须大于该值）。
         """
         self._config = build_config(
             config_path=config_path,
@@ -80,6 +85,7 @@ class HotMeme:
             xhs_sort_type=xhs_sort_type,
             xhs_time_filter=xhs_time_filter,
             xhs_search_tags=xhs_search_tags,
+            xhs_min_score=xhs_min_score,
         )
         self._seen_item_ids: set[str] = set()
         self._has_crawled = False
@@ -123,6 +129,7 @@ class HotMeme:
             fetch_errors=round_result.fetch_errors,
             api_calls=round_result.api_calls,
             is_initial=is_initial,
+            diagnostics=round_result.diagnostics,
         )
 
     def fetch_hot_posts(
@@ -144,9 +151,31 @@ class HotMeme:
             xiaohongshu=self._config.xiaohongshu,
         )
 
-    def render_output(self, items: list[ImageItem]) -> MemeOutputBatch:
-        """把热帖项渲染为可交付输出包。"""
-        return render_items(items)
+    def render_output(
+        self,
+        items: list[ImageItem],
+        *,
+        on_progress: Callable[[str], None] | None = None,
+    ) -> MemeOutputBatch:
+        """筛选后的热帖项下载图片并渲染为可交付输出包。"""
+        assets = self._config.assets or AssetsPolicy()
+        prepared, errors, stage = materialize_image_items_traced(
+            items,
+            policy=assets,
+            on_progress=on_progress,
+        )
+        if on_progress is not None:
+            on_progress(f"渲染输出包 {len(prepared)} 条…")
+        batch = render_items(
+            prepared,
+            max_images_per_item=assets.max_images_per_item,
+        )
+        return batch.model_copy(
+            update={
+                "materialize_errors": errors,
+                "materialize_stage": stage,
+            },
+        )
 
     def render_crawl_packet(self, packet: HotMemeCrawlPacket) -> MemeOutputBatch:
         """渲染爬取数据包中的新增热帖。"""
@@ -165,4 +194,5 @@ class HotMeme:
             providers_failed=list(feed.providers_failed),
             fetch_errors=list(feed.fetch_errors),
             api_calls=list(feed.api_calls),
+            diagnostics=feed.diagnostics,
         )

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from hotmeme.models import ImageItem, TikHubApiCall
+from hotmeme.models import FetchDiagnostics, ImageItem, TikHubApiCall
 
 
 @dataclass
@@ -14,3 +14,4 @@ class FetchedRound:
     providers_failed: list[str] = field(default_factory=list)
     fetch_errors: list[str] = field(default_factory=list)
     api_calls: list[TikHubApiCall] = field(default_factory=list)
+    diagnostics: FetchDiagnostics | None = None

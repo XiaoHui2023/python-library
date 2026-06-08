@@ -2,7 +2,15 @@ from unittest.mock import MagicMock, patch
 
 from hotmeme.models import ImageItem, MediaType, XiaohongshuPolicy
 from hotmeme.pipeline.fetch_plan import min_expected_call_count
+from hotmeme.sources.parsers.xiaohongshu import XhsParseRunStats
 from hotmeme.sources.platforms.xiaohongshu import XiaohongshuWorkflow
+
+_PARSE_STATS = XhsParseRunStats(
+    api_list_items=1,
+    note_candidates=1,
+    parsed_with_media=1,
+    no_media=0,
+)
 
 
 def test_search_keywords_tags_disabled_uses_first_tag_only() -> None:
@@ -41,27 +49,32 @@ def _image_item() -> ImageItem:
     )
 
 
-@patch("hotmeme.sources.platforms.xiaohongshu.parse_xhs_search_notes", return_value=[_image_item()])
+@patch(
+    "hotmeme.sources.platforms.xiaohongshu.parse_xhs_search_notes_traced",
+    return_value=([_image_item()], _PARSE_STATS),
+)
 def test_workflow_sets_search_tag_on_items(mock_parse) -> None:
     client = MagicMock()
     policy = XiaohongshuPolicy(tags_enabled=False, search_tags=["搞笑"])
-    items = XiaohongshuWorkflow(policy).fetch(client)
+    items = XiaohongshuWorkflow(policy).fetch(client).items
     assert len(items) == 1
     assert items[0].search_tag == "搞笑"
 
 
-@patch("hotmeme.sources.platforms.xiaohongshu.parse_xhs_search_notes", return_value=[_image_item()])
+@patch(
+    "hotmeme.sources.platforms.xiaohongshu.parse_xhs_search_notes_traced",
+    return_value=([_image_item()], _PARSE_STATS),
+)
 def test_workflow_passes_page_sort_and_time_filter(mock_parse) -> None:
     client = MagicMock()
     policy = XiaohongshuPolicy(
         tags_enabled=False,
         page=1,
-        sort_type="popularity_descending",
         time_filter="一天内",
     )
-    XiaohongshuWorkflow(policy).fetch(client)
+    XiaohongshuWorkflow(policy).fetch(client).items
     params = client.get.call_args.args[1]
     assert params["page"] == 1
-    assert params["sort_type"] == "popularity_descending"
+    assert params["sort_type"] == "general"
     assert params["time_filter"] == "一天内"
-    assert params["keyword"] == "#搞笑#"
+    assert params["keyword"] == "#搞笑日常#"
