@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "python-library-napcat-adapter"
-version = "0.1.1"
+version = "0.1.3"
 description = "NapCat CQ 消息段与 OneBot 载荷互转及接入"
 requires-python = ">=3.10"
 dependencies = [
     "pydantic>=2.0,<3",
     "napcat-sdk",
-    "python-library-onebot-protocol",
+    "python-library-onebot-protocol==0.2.0",
 ]
 
 [tool.hatch.metadata]

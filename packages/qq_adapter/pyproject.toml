@@ -4,12 +4,12 @@ build-backend = "hatchling.build"
 
 [project]
 name = "python-library-qq-adapter"
-version = "0.1.0"
+version = "0.1.1"
 description = "QQ 开放平台正文与 OneBot 载荷互转及接入"
 requires-python = ">=3.10"
 dependencies = [
     "aiohttp",
-    "python-library-onebot-protocol",
+    "python-library-onebot-protocol==0.2.0",
 ]
 
 [tool.hatch.metadata]

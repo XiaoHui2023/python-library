@@ -14,15 +14,16 @@ def onebot_to_qq(payload: MessagePayload) -> QQMessage:
         含平台正文字符串的包内消息对象
     """
     source_type: QQSource | None = None
-    if payload.source_type == "private":
+    if payload.message_type == "private":
         source_type = QQSource.C2C
+    peer_id = payload.peer_id
     return QQMessage(
-        source_id=payload.session_id,
-        session_id=payload.session_id,
+        source_id=peer_id,
+        session_id=peer_id,
         msg_id=payload.message_id,
-        content=messages_to_content(payload.messages),
+        content=messages_to_content(payload.message),
         source_type=source_type,
-        bot_id=payload.bot_id,
+        bot_id=payload.self_id,
         user_id=payload.user_id,
     )
 
@@ -37,15 +38,16 @@ def qq_to_onebot(msg: QQMessage) -> MessagePayload:
         群聊与频道映射为 group，单聊映射为 private
     """
     if msg.source_type in [QQSource.GUILD, QQSource.GROUP]:
-        source_type = "group"
+        message_type = "group"
     else:
-        source_type = "private"
+        message_type = "private"
 
+    is_group = message_type == "group"
     return MessagePayload(
         message_id=msg.msg_id,
-        source_type=source_type,
-        bot_id=msg.bot_id or "",
-        session_id=msg.source_id,
-        user_id=msg.user_id,
-        messages=content_to_messages(msg.content),
+        message_type=message_type,
+        self_id=msg.bot_id or "",
+        group_id=msg.source_id if is_group else None,
+        user_id=msg.user_id if not is_group else msg.user_id,
+        message=content_to_messages(msg.content),
     )

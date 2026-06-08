@@ -74,29 +74,20 @@ def onebot_to_bot(payload: MessagePayload) -> BotMessage:
         含 data_list 的包内机器人消息
     """
     data_list = []
-    for message in payload.messages:
-        segment = _onebot_to_cq_segment(message)
-        if segment is None:
+    for segment in payload.message:
+        cq_segment = _onebot_to_cq_segment(segment)
+        if cq_segment is None:
             continue
-        data_list.append(segment.model_dump())
+        data_list.append(cq_segment.model_dump())
 
-    msg = BotMessage(
+    return BotMessage(
         message_id=payload.message_id,
         data_list=data_list,
-        message_type=MessageType(payload.source_type),
-        bot_id=payload.bot_id,
-        session_id=payload.session_id,
+        message_type=MessageType(payload.message_type),
+        bot_id=payload.self_id,
+        session_id=payload.peer_id,
         user_name=payload.user_id or "",
     )
-
-    if msg.message_type == MessageType.GROUP:
-        if msg.user_name:
-            msg.data_list = [
-                AtSegment(data={"qq": msg.user_name, "name": USER_MAP.get(msg.user_name, "")}).model_dump(),
-                TextSegment(data={"text": " "}).model_dump(),
-            ] + msg.data_list
-
-    return msg
 
 
 def bot_to_onebot(msg: BotMessage) -> Optional[MessagePayload]:
@@ -128,13 +119,14 @@ def bot_to_onebot(msg: BotMessage) -> Optional[MessagePayload]:
     if not messages:
         return None
 
+    is_group = msg.message_type == MessageType.GROUP
     return MessagePayload(
         message_id=msg.message_id,
-        source_type=msg.message_type.value,
-        bot_id=msg.bot_id,
-        session_id=msg.session_id,
+        message_type=msg.message_type.value,
+        self_id=msg.bot_id,
+        group_id=msg.session_id if is_group else None,
         user_id=msg.user_name,
-        messages=messages,
+        message=messages,
     )
 
 
@@ -177,9 +169,7 @@ def _onebot_to_cq_segment(
     if isinstance(message, onebot_protocol.TextMessageSegment):
         return TextSegment(data={"text": message.data.text})
     if isinstance(message, onebot_protocol.MentionMessageSegment):
-        name = USER_MAP.get(message.data.user_id)
-        if not name:
-            return None
+        name = USER_MAP.get(message.data.user_id, "")
         return AtSegment(data={"qq": message.data.user_id, "name": name})
     if isinstance(message, onebot_protocol.ImageMessageSegment):
         cq_data = _file_data_to_cq(message.data)
