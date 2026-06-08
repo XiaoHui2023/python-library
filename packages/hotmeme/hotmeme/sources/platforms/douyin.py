@@ -5,6 +5,7 @@ from hotmeme.sources.parsers.douyin import (
     extract_douyin_hot_keywords,
     parse_douyin_video_search,
 )
+from hotmeme.sources.platform_fetch import PlatformFetchResult
 from hotmeme.sources.platforms.base import PlatformWorkflow
 from hotmeme.sources.tikhub_client import TikHubClient
 
@@ -15,11 +16,11 @@ class DouyinWorkflow(PlatformWorkflow):
     platform = "douyin"
     _SEARCH_TIMEOUT = 45.0
 
-    def fetch(self, client: TikHubClient) -> list[ImageItem]:
+    def fetch(self, client: TikHubClient) -> PlatformFetchResult:
         hot_data = client.get("/api/v1/douyin/web/fetch_hot_search_result")
         keywords = extract_douyin_hot_keywords(hot_data, limit=1)
         if not keywords:
-            return []
+            return PlatformFetchResult()
 
         items: list[ImageItem] = []
         seen: set[str] = set()
@@ -42,4 +43,4 @@ class DouyinWorkflow(PlatformWorkflow):
                     continue
                 seen.add(item.id)
                 items.append(item)
-        return items
+        return PlatformFetchResult(items=items)

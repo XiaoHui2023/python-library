@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from hotmeme.models import ImageItem
+from hotmeme.sources.platform_fetch import PlatformFetchResult
 from hotmeme.sources.tikhub_client import TikHubClient
 
 
@@ -12,5 +12,5 @@ class PlatformWorkflow(ABC):
     platform: str
 
     @abstractmethod
-    def fetch(self, client: TikHubClient) -> list[ImageItem]:
+    def fetch(self, client: TikHubClient) -> PlatformFetchResult:
         """按平台策略拉取热帖。"""

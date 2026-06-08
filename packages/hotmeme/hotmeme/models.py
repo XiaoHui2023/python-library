@@ -124,6 +124,10 @@ class ImageFeed(BaseModel):
         default_factory=list,
         description="本轮 TikHub HTTP 请求记录（按次计费）",
     )
+    diagnostics: FetchDiagnostics | None = Field(
+        default=None,
+        description="解析与过滤阶段统计（调试）",
+    )
 
 
 class SourceConfigBase(BaseModel):
