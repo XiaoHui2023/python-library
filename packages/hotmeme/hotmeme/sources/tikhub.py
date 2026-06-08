@@ -27,7 +27,6 @@ class TikHubSource(BaseHotPostSource):
             raise TikHubApiError("TikHub api_key 未配置")
         self._client_obj = TikHubClient(
             api_key=api_key,
-            base_url=self._config.base_url,
             timeout=self._config.timeout,
         )
         return self._client_obj

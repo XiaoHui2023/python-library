@@ -13,26 +13,20 @@ _PARSE_STATS = XhsParseRunStats(
 )
 
 
-def test_search_keywords_tags_disabled_uses_first_tag_only() -> None:
-    policy = XiaohongshuPolicy(
-        tags_enabled=False,
-        search_tags=["搞笑", "段子"],
-    )
-    assert policy.search_keywords() == ["#搞笑#"]
-    assert policy.tikhub_call_count() == 1
-
-
-def test_search_keywords_tags_enabled_uses_all_tags() -> None:
-    policy = XiaohongshuPolicy(
-        tags_enabled=True,
-        search_tags=["搞笑", "段子"],
-    )
+def test_search_keywords_uses_all_tags() -> None:
+    policy = XiaohongshuPolicy(search_tags=["搞笑", "段子"])
     assert policy.search_keywords() == ["#搞笑#", "#段子#"]
     assert policy.tikhub_call_count() == 2
 
 
-def test_min_expected_call_count_matches_enabled_tags() -> None:
-    policy = XiaohongshuPolicy(tags_enabled=True, search_tags=["搞笑", "段子"])
+def test_search_keywords_single_tag() -> None:
+    policy = XiaohongshuPolicy(search_tags=["搞笑"])
+    assert policy.search_keywords() == ["#搞笑#"]
+    assert policy.tikhub_call_count() == 1
+
+
+def test_min_expected_call_count_matches_search_tags() -> None:
+    policy = XiaohongshuPolicy(search_tags=["搞笑", "段子"])
     assert min_expected_call_count(["xiaohongshu"], xiaohongshu=policy) == 2
 
 
@@ -55,7 +49,7 @@ def _image_item() -> ImageItem:
 )
 def test_workflow_sets_search_tag_on_items(mock_parse) -> None:
     client = MagicMock()
-    policy = XiaohongshuPolicy(tags_enabled=False, search_tags=["搞笑"])
+    policy = XiaohongshuPolicy(search_tags=["搞笑"])
     items = XiaohongshuWorkflow(policy).fetch(client).items
     assert len(items) == 1
     assert items[0].search_tag == "搞笑"
@@ -68,7 +62,6 @@ def test_workflow_sets_search_tag_on_items(mock_parse) -> None:
 def test_workflow_passes_page_sort_and_time_filter(mock_parse) -> None:
     client = MagicMock()
     policy = XiaohongshuPolicy(
-        tags_enabled=False,
         page=1,
         time_filter="一天内",
     )

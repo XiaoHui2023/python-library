@@ -32,7 +32,6 @@ class HotMeme:
         config_path: Path | str | None = None,
         tikhub_enabled: bool = True,
         api_key: str | None = None,
-        base_url: str = "https://api.tikhub.io",
         source_timeout: float = 5.0,
         allow_nsfw: bool = False,
         platforms: list[str] | None = None,
@@ -40,7 +39,6 @@ class HotMeme:
         retries: int = 1,
         skip_failed_providers: bool = True,
         xiaohongshu: XiaohongshuPolicy | None = None,
-        xhs_tags_enabled: bool | None = None,
         xhs_page: int | None = None,
         xhs_sort_type: str | None = None,
         xhs_time_filter: str | None = None,
@@ -53,7 +51,6 @@ class HotMeme:
             config_path: YAML/JSON 配置文件；指定时忽略其余构造项。
             tikhub_enabled: 是否启用 TikHub。
             api_key: TikHub API key。
-            base_url: TikHub API 根地址。
             source_timeout: TikHub 请求超时秒数。
             allow_nsfw: 是否允许 NSFW 内容。
             platforms: 拉帖平台列表；默认仅小红书。
@@ -61,7 +58,6 @@ class HotMeme:
             retries: 失败重试次数。
             skip_failed_providers: 单平台失败时是否跳过并继续。
             xiaohongshu: 小红书策略整块覆盖。
-            xhs_tags_enabled: 是否对 search_tags 中每个 tag 各搜一次。
             xhs_page: 小红书搜索页码。
             xhs_sort_type: 小红书排序，默认综合。
             xhs_time_filter: 小红书发布时间筛选。
@@ -72,7 +68,6 @@ class HotMeme:
             config_path=config_path,
             tikhub_enabled=tikhub_enabled,
             api_key=api_key,
-            base_url=base_url,
             source_timeout=source_timeout,
             allow_nsfw=allow_nsfw,
             platforms=platforms,
@@ -80,7 +75,6 @@ class HotMeme:
             retries=retries,
             skip_failed_providers=skip_failed_providers,
             xiaohongshu=xiaohongshu,
-            xhs_tags_enabled=xhs_tags_enabled,
             xhs_page=xhs_page,
             xhs_sort_type=xhs_sort_type,
             xhs_time_filter=xhs_time_filter,

@@ -14,6 +14,8 @@ from hotmeme.common.http_json import (
     read_http_error_payload,
 )
 
+TIKHUB_BASE_URL = "https://api.tikhub.io"
+
 
 class TikHubClient:
     """TikHub HTTP 客户端。"""
@@ -27,11 +29,10 @@ class TikHubClient:
         self,
         *,
         api_key: str,
-        base_url: str = "https://api.tikhub.io",
         timeout: float = 5.0,
     ) -> None:
         self._api_key = api_key
-        self._base_url = base_url.rstrip("/")
+        self._base_url = TIKHUB_BASE_URL.rstrip("/")
         self._timeout = timeout
         self.request_log: list[TikHubApiCall] = []
 

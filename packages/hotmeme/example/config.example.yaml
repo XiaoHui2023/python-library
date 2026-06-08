@@ -1,6 +1,5 @@
 tikhub:
   enabled: true
-  base_url: https://api.tikhub.io
   timeout: 30
 
 pipeline:
@@ -8,7 +7,6 @@ pipeline:
     - xiaohongshu
 
 xiaohongshu:
-  tags_enabled: false
   search_tags:
     - 搞笑日常
   page: 1

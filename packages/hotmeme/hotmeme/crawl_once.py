@@ -12,7 +12,6 @@ def crawl_once(
     config_path: Path | str | None = None,
     tikhub_enabled: bool = True,
     api_key: str | None = None,
-    base_url: str = "https://api.tikhub.io",
     source_timeout: float = 5.0,
     allow_nsfw: bool = False,
     platforms: list[str] | None = None,
@@ -29,7 +28,6 @@ def crawl_once(
         config_path: YAML/JSON 配置文件；指定时忽略其余构造项。
         tikhub_enabled: 是否启用 TikHub。
         api_key: TikHub API key。
-        base_url: TikHub API 根地址。
         source_timeout: TikHub 请求超时秒数。
         allow_nsfw: 是否允许 NSFW 内容。
         platforms: 拉帖平台列表。
@@ -45,7 +43,6 @@ def crawl_once(
             config_path=config_path,
             tikhub_enabled=tikhub_enabled,
             api_key=api_key,
-            base_url=base_url,
             source_timeout=source_timeout,
             allow_nsfw=allow_nsfw,
             platforms=platforms,

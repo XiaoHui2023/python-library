@@ -208,21 +208,12 @@ class SourceConfigBase(BaseModel):
 class TikHubConfig(SourceConfigBase):
     """TikHub 热帖拉取配置。"""
 
-    base_url: str = Field(
-        default="https://api.tikhub.io",
-        description="TikHub API 根地址",
-    )
-
 
 class XiaohongshuPolicy(BaseModel):
     """小红书按话题 tag 搜索策略。"""
 
     model_config = ConfigDict(extra="forbid")
 
-    tags_enabled: bool = Field(
-        default=False,
-        description="为 true 时对 search_tags 中每个 tag 各搜一次；为 false 时仅搜列表第一项",
-    )
     search_tags: list[str] = Field(
         default_factory=lambda: list(DEFAULT_XHS_SEARCH_TAGS),
         description="话题 tag 列表，按命中率从高到低排列",
@@ -249,9 +240,8 @@ class XiaohongshuPolicy(BaseModel):
         """本轮实际用于搜索的 ``#话题#`` 关键词列表。"""
         from hotmeme.sources.parsers.xiaohongshu import format_xhs_tag_query
 
-        selected = self.search_tags if self.tags_enabled else self.search_tags[:1]
         keywords: list[str] = []
-        for tag in selected:
+        for tag in self.search_tags:
             query = format_xhs_tag_query(tag)
             if query:
                 keywords.append(query)

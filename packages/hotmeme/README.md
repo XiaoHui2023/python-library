@@ -49,7 +49,6 @@
 | --- | --- | --- |
 | `enabled` | true | 是否启用 TikHub |
 | `api_key` | — | TikHub API key（调用方传入） |
-| `base_url` | `https://api.tikhub.io` | API 根地址 |
 | `timeout` | 5 | 请求超时秒数 |
 | `allow_nsfw` | false | 是否允许 NSFW |
 | `media_types` | image、gif | 允许的媒体类型（不含 video） |

@@ -18,7 +18,6 @@ def build_config(
     config_path: Path | str | None = None,
     tikhub_enabled: bool = True,
     api_key: str | None = None,
-    base_url: str = "https://api.tikhub.io",
     source_timeout: float = 5.0,
     allow_nsfw: bool = False,
     platforms: list[str] | None = None,
@@ -26,7 +25,6 @@ def build_config(
     retries: int = 1,
     skip_failed_providers: bool = True,
     xiaohongshu: XiaohongshuPolicy | None = None,
-    xhs_tags_enabled: bool | None = None,
     xhs_page: int | None = None,
     xhs_sort_type: str | None = None,
     xhs_time_filter: str | None = None,
@@ -35,8 +33,6 @@ def build_config(
 ) -> HotMemeModels:
     """由平铺入参或配置文件组装根配置。"""
     xhs_overrides: dict[str, object] = {}
-    if xhs_tags_enabled is not None:
-        xhs_overrides["tags_enabled"] = xhs_tags_enabled
     if xhs_page is not None:
         xhs_overrides["page"] = xhs_page
     if xhs_sort_type is not None:
@@ -72,7 +68,6 @@ def build_config(
         tikhub = TikHubConfig(
             enabled=True,
             api_key=api_key,
-            base_url=base_url,
             timeout=source_timeout,
             allow_nsfw=allow_nsfw,
         )
