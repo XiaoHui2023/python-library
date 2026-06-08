@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from hotmeme.models import ImageItem, ReviewStatus
 
-DEFAULT_CN_TITLE_BLOCKLIST = frozenset(
+DEFAULT_TITLE_BLOCKLIST = frozenset(
     {
         "色情",
         "裸体",
@@ -15,7 +15,7 @@ DEFAULT_CN_TITLE_BLOCKLIST = frozenset(
     },
 )
 
-DEFAULT_CN_RISK_KEYWORDS = frozenset(
+DEFAULT_RISK_KEYWORDS = frozenset(
     {
         "习近平",
         "六四",
@@ -25,11 +25,11 @@ DEFAULT_CN_RISK_KEYWORDS = frozenset(
 )
 
 
-def filter_cn_risk_items(
+def filter_risk_items(
     items: list[ImageItem],
     *,
-    title_blocklist: frozenset[str] = DEFAULT_CN_TITLE_BLOCKLIST,
-    risk_keywords: frozenset[str] = DEFAULT_CN_RISK_KEYWORDS,
+    title_blocklist: frozenset[str] = DEFAULT_TITLE_BLOCKLIST,
+    risk_keywords: frozenset[str] = DEFAULT_RISK_KEYWORDS,
     drop_rejected: bool = True,
 ) -> list[ImageItem]:
     """过滤广告引流、敏感词与已驳回项。"""
@@ -38,8 +38,7 @@ def filter_cn_risk_items(
         if drop_rejected and item.review_status == ReviewStatus.REJECTED:
             continue
         title = item.title
-        topic = item.topic or ""
-        text = f"{title} {topic}"
+        text = title
         if any(word in text for word in title_blocklist):
             continue
         if any(word in text for word in risk_keywords):

@@ -1,81 +1,73 @@
 # hotmeme
 
-从社会热点出发，经发现源拿热搜话题，再按热词在小红书、微博等平台搜梗图与趣图；不自写爬虫，对接 hotpush、TikHub。
+经 **TikHub** 从国内平台拉热门帖（图文或短视频），质检后渲染为可交付输出包。
 
-- 热点发现与内容搜图分层：先拿在讨论什么，再按热词取图
-- 统一图片项：保留来源链接、作者、话题、审核状态与风险标签
-- hotpush、TikHub 预留接口；须在配置中显式启用
-- 每个接入独立文件，配置里 `enabled` 控制开关
+- 数据源：TikHub（API key 由调用方传入）
+- 默认平台：小红书、抖音
+- 交付物：图或视频地址 + 标题/作者文案 + 原帖链接
 
 ## 设计特性
 
-### 可选源
+### 平台工作流
 
-在 `cn` 下配置 `hotpush`（发现）、`tikhub`（搜图）。未写入配置的源不会加载。
+各平台对应独立拉帖策略，由 TikHub 不同接口组合完成：
 
-### 热点发现
-
-从自部署 hotpush 拉多平台热榜，得到当前在讨论什么。
-
-### 内容搜图
-
-用热词请求小红书、微博等搜索 API，从笔记、帖子里抽出可展示图片；由 TikHub 接入后提供。
-
-### 发现到成图管线
-
-拉热榜 → 粗分类 → 按热词搜图文 → 过滤去重排序。单源失败不影响其它源。
-
-### 统一图片项
-
-各平台数据都映射为同一结构，含话题、风险标签、审核状态；默认保留原文链接。
-
-### 内容安全
-
-默认过滤 NSFW、广告引流与敏感词；政治、暴力、色情类内容默认不返回。
-
-### 单次爬取与增量
-
-`HotMeme` 可实例化。`crawl_once()` 拉取所有已启用源，返回 `HotMemeCrawlPacket`；实例记住已见 ID，再次调用时仅 `new_items` / `new_topics` 为相对上次新增。
-
-## API
-
-| 方法 | 说明 |
+| 平台 | 策略 |
 | --- | --- |
-| `crawl_once()` | 单次爬取全部已启用源，返回增量数据包 |
-| `reset_seen()` | 清空已见 ID，下次全部视为新增 |
-| `discover_topics` / `fetch_cn_hot` | 热点发现与成图 |
+| 抖音 | 热榜关键词 → 视频搜索（近一天、按点赞） |
+| 小红书 | 热榜话题 → 笔记搜索（按热度） |
+
+未接入工作流的平台标识会被跳过，不中断整轮拉取。
+
+### 质检管线
+
+拉取结果归一为热帖项后，依次丢弃无媒体条目、按 NSFW/风控/去重/排序过滤；API 返回多少条就保留多少条（仅质检剔除，不按条数截断）。
+
+### 增量爬取
+
+`crawl_once` 在实例内记忆已见 ID，每轮只交付相对上次的新增帖。
+
+### 渲染输出
+
+渲染器把通过质检的热帖项转为输出包：主媒体地址（图或视频）、缩略图、标题、含作者的展示文案、原帖链接。
 
 ## 配置
 
-### `cn.hotpush`
+示例见 `example/config.example.yaml`。私密信息（TikHub API key）不入库，由调用参数或 `example/.env` 提供。
 
-| 含义 | 默认 | 说明 |
+### `tikhub`
+
+| 键 | 默认 | 说明 |
 | --- | --- | --- |
-| 是否启用 | false | 自部署 hotpush 热榜发现 |
-| `base_url` | 空 | 服务根地址，如 `http://127.0.0.1:8000` |
-
-### `cn.tikhub`
-
-| 含义 | 默认 | 说明 |
-| --- | --- | --- |
-| 是否启用 | false | 按热词搜图；须配置 `api_key` |
+| `enabled` | true | 是否启用 TikHub |
+| `api_key` | — | TikHub API key（调用方传入） |
 | `base_url` | `https://api.tikhub.io` | API 根地址 |
+| `timeout` | 5 | 请求超时秒数 |
+| `allow_nsfw` | false | 是否允许 NSFW |
 
-### `cn_pipeline`
+### `pipeline`
 
-| 含义 | 默认 | 说明 |
+| 键 | 默认 | 说明 |
 | --- | --- | --- |
-| `topic_limit` | 10 | 参与搜图的热点数 |
-| `images_per_topic` | 3 | 每个热点最多取图数 |
-| `classify_topics` | true | 是否对热点粗分类 |
-| `content_platforms` | xiaohongshu、weibo | 内容搜索目标平台 |
+| `platforms` | 小红书、抖音 | 拉帖平台列表 |
 
 ### `fetch`
 
 | 键 | 默认 | 说明 |
 | --- | --- | --- |
-| `total_limit` | 50 | 聚合后最大返回条数 |
-| `per_source_timeout` | 5 | 单源超时秒数 |
-| `retries` | 1 | 单源重试次数 |
+| `per_source_timeout` | 5 | 单平台超时秒数 |
+| `retries` | 1 | 失败重试次数 |
+| `skip_failed_providers` | true | 单平台失败时是否跳过并继续 |
 
-示例见 `example/`。
+## 入口
+
+| 入口 | 说明 |
+| --- | --- |
+| `HotMeme(api_key=...)` | 构造聚合器 |
+| `HotMeme.fetch_hot_posts()` | 拉热帖并质检 |
+| `HotMeme.crawl_once()` | 增量爬取 |
+| `HotMeme.crawl_and_render()` | 爬取并渲染输出包 |
+| `render_items(items)` | 把热帖项列表渲染为输出批次 |
+| `supported_platforms()` | 已接入工作流的平台 |
+
+本地试跑：复制 `example/.env.example` 为 `example/.env`，填入 `TIKHUB_API_KEY`，在包根目录执行 `example.bat`。

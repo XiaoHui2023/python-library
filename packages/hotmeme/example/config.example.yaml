@@ -1,26 +1,21 @@
-cn:
-  hotpush:
-    enabled: false
-    base_url: http://127.0.0.1:8000
-    limit: 10
-    timeout: 5
+tikhub:
+  enabled: true
+  base_url: https://api.tikhub.io
+  timeout: 30
 
-  tikhub:
-    enabled: false
-    api_key: ${TIKHUB_API_KEY}
-    limit: 10
-    timeout: 5
-
-cn_pipeline:
-  topic_limit: 10
-  images_per_topic: 3
-  classify_topics: true
-  content_platforms:
+pipeline:
+  platforms:
     - xiaohongshu
-    - weibo
+
+xiaohongshu:
+  tags_enabled: false
+  search_tags:
+    - 搞笑
+  page: 1
+  sort_type: popularity_descending
+  time_filter: 一天内
+  note_type: 不限
 
 fetch:
-  per_source_timeout: 5
-  per_source_limit: 20
-  total_limit: 50
+  per_source_timeout: 30
   retries: 1

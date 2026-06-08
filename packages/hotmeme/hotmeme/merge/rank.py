@@ -18,6 +18,8 @@ def rank_score(item: ImageItem, *, now: datetime | None = None) -> float:
     """把来源分数、时间、社区质量折成可比较的排序分。"""
     now = now or datetime.now(UTC)
     score = float(item.score or 0.0)
+    if score > 0:
+        score += min(score, 100_000) ** 0.5
     if item.created_at is not None:
         created = item.created_at
         if created.tzinfo is None:

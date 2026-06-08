@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from hotmeme.cn_models import TopicItem
-from hotmeme.models import ImageItem
+from hotmeme.models import ImageItem, TikHubApiCall
 
 
 @dataclass
 class FetchedRound:
-    """单次爬取各源原始合并结果（未做「相对上次」增量）。"""
+    """单次爬取原始合并结果（未做相对上次增量）。"""
 
     items: list[ImageItem] = field(default_factory=list)
-    topics: list[TopicItem] = field(default_factory=list)
     providers_ok: list[str] = field(default_factory=list)
     providers_failed: list[str] = field(default_factory=list)
+    fetch_errors: list[str] = field(default_factory=list)
+    api_calls: list[TikHubApiCall] = field(default_factory=list)

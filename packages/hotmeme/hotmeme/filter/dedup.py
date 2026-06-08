@@ -19,7 +19,8 @@ def dedup_by_url(items: list[ImageItem]) -> list[ImageItem]:
     seen: set[str] = set()
     kept: list[ImageItem] = []
     for item in items:
-        key = normalize_image_url(item.image_url)
+        media_url = item.video_url or item.image_url
+        key = normalize_image_url(media_url)
         if key in seen:
             continue
         seen.add(key)
