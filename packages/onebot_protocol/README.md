@@ -1,6 +1,20 @@
 # onebot-protocol
 
-OneBot 通信协议，定义消息收发的公共数据结构。基于`OneBot 11`标准，使用 Pydantic 提供类型安全的模型定义。
+OneBot 通信协议，定义消息收发的公共数据结构。基于 OneBot 11 标准，使用 Pydantic 提供类型安全的模型定义。
+
+## `MessagePayload`（OneBot 11 字段名）
+
+| 字段 | 说明 |
+|------|------|
+| `post_type` | 事件类型，如 `message`（可选） |
+| `message_type` | `group` 或 `private` |
+| `self_id` | 机器人 QQ 号（可选） |
+| `message_id` | 消息 ID；空时自动生成 UUID |
+| `user_id` | 发送方 QQ；私聊时亦为会话对端 |
+| `group_id` | 群号；群聊会话标识 |
+| `message` | 消息段列表 |
+
+解析时仍接受旧名别名：`source_type`→`message_type`、`bot_id`→`self_id`、`messages`→`message`、`session_id`→`group_id`/`user_id`。
 
 ## 特性
 
