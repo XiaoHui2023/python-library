@@ -48,6 +48,18 @@ def test_with_pixel_coordinates() -> None:
     assert enriched[0].pixel_y == 250.0
 
 
+def test_region_map_image_url_encodes_special_characters() -> None:
+    from ff14_the_hunt.spawn_map.region_fetch import region_map_image_url
+
+    url = region_map_image_url("https://tracker.beartoolkit.com", "Yak T'el")
+    assert (
+        url
+        == "https://tracker.beartoolkit.com/static/images/HuntRegions/Yak%20T%27el.png"
+    )
+    plain = region_map_image_url("https://tracker.beartoolkit.com", "Shaaloani")
+    assert plain == "https://tracker.beartoolkit.com/static/images/HuntRegions/Shaaloani.png"
+
+
 def test_build_region_map_image_round_trip() -> None:
     from ff14_the_hunt.spawn_map.region_fetch import RegionMapFetcher
     from ff14_the_hunt.spawn_map.region_image import build_region_map_image

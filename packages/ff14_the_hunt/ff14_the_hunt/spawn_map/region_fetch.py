@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import urllib.error
+import urllib.parse
 import urllib.request
 
 
@@ -15,7 +16,8 @@ def site_root_from_api_base(base_url: str) -> str:
 def region_map_image_url(site_root: str, region: str) -> str:
     """区域狩猎地图 PNG 地址（与站点 ``HuntRegions`` 目录一致）。"""
     root = site_root.rstrip("/")
-    return f"{root}/static/images/HuntRegions/{region}.png"
+    encoded_region = urllib.parse.quote(region, safe="")
+    return f"{root}/static/images/HuntRegions/{encoded_region}.png"
 
 
 class RegionMapFetcher:
