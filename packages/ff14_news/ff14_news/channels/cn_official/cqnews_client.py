@@ -11,6 +11,7 @@ from ff14_news.channels.cn_official.constants import (
     GAME_CODE,
     OFFICIAL_NEWS_DETAIL_URL_TEMPLATE,
 )
+from ff14_news.common.urlopen_retry import urlopen_read
 from ff14_news.models import NewsListItem
 
 _DEFAULT_HEADERS = {
@@ -67,7 +68,7 @@ class CqNewsClient:
     def _get_json(self, url: str) -> dict[str, Any]:
         req = urllib.request.Request(url, headers=_DEFAULT_HEADERS)
         try:
-            raw = urllib.request.urlopen(req, timeout=self._timeout).read()
+            raw = urlopen_read(req, timeout=self._timeout)
         except urllib.error.HTTPError as exc:
             raise ValueError(f"HTTP {exc.code} for {url}") from exc
         payload = json.loads(raw.decode("utf-8"))
