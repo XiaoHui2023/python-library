@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from collections.abc import Callable
@@ -20,6 +21,9 @@ from ff14_the_hunt.spawn_map.attach import enrich_recent_spawn_details
 from ff14_the_hunt.spawn_map.region_fetch import RegionMapFetcher, site_root_from_api_base
 
 HuntCrawlCallback = Callable[[HuntCrawlPacket], None]
+
+_log = logging.getLogger(__name__)
+_FETCH_FAILURE_RETRY_SECONDS = 60.0
 
 
 class FF14TheHunt:
@@ -317,17 +321,33 @@ class FF14TheHunt:
         if stop_event is None:
             return
 
-        marks = self._scheduler.fetch()
-        self._emit_crawl(self._make_crawl_packet(marks))
-
         while not stop_event.is_set():
-            wait_seconds = self._scheduler.seconds_until_next_fetch()
-            if wait_seconds > 0 and wait_or_stop(stop_event, wait_seconds):
-                break
-            if stop_event.is_set():
-                break
+            try:
+                self._poll_once_or_wait(stop_event)
+                if stop_event.is_set():
+                    break
+                wait_seconds = self._scheduler.seconds_until_next_fetch()
+                if wait_seconds > 0 and wait_or_stop(stop_event, wait_seconds):
+                    break
+            except KeyboardInterrupt:
+                raise
+            except Exception as exc:
+                _log.exception("狩猎轮询意外错误，%s 秒后继续：%s", _FETCH_FAILURE_RETRY_SECONDS, exc)
+                wait_or_stop(stop_event, _FETCH_FAILURE_RETRY_SECONDS)
+
+    def _poll_once_or_wait(self, stop_event: threading.Event) -> None:
+        try:
             marks = self._scheduler.fetch()
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception as exc:
+            _log.warning("狩猎爬取失败，%s 秒后重试：%s", _FETCH_FAILURE_RETRY_SECONDS, exc)
+            wait_or_stop(stop_event, _FETCH_FAILURE_RETRY_SECONDS)
+            return
+        try:
             self._emit_crawl(self._make_crawl_packet(marks))
+        except Exception as exc:
+            _log.exception("狩猎爬取回调失败，已跳过本轮展示：%s", exc)
 
     def _make_crawl_packet(self, marks: list[HuntMarkRecord]) -> HuntCrawlPacket:
         crawled_at = self._scheduler.last_crawl_at

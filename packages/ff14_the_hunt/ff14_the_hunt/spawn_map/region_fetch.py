@@ -4,6 +4,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from ff14_the_hunt.common.urlopen_retry import urlopen_read
+
 
 def site_root_from_api_base(base_url: str) -> str:
     """由 Bear Tracker ``/api`` 根地址推导站点静态资源根。"""
@@ -62,11 +64,7 @@ class RegionMapFetcher:
             method="GET",
         )
         try:
-            with urllib.request.urlopen(
-                request,
-                timeout=self._timeout_seconds,
-            ) as response:
-                data = response.read()
+            data = urlopen_read(request, timeout=self._timeout_seconds)
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(

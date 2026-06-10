@@ -1,6 +1,7 @@
 import threading
 import time
-from unittest.mock import MagicMock
+import urllib.error
+from unittest.mock import MagicMock, patch
 
 from ff14_the_hunt import FF14TheHunt, HuntCrawlPacket, HuntQueryFilter, HuntRankKind
 from ff14_the_hunt.bear_tracker.timer_theme import build_timer_display
@@ -108,6 +109,31 @@ def test_wait_or_stop() -> None:
     assert wait_or_stop(stop_event, 0.1) is False
     stop_event.set()
     assert wait_or_stop(stop_event, 1.0) is True
+
+
+def test_poll_loop_survives_callback_failure() -> None:
+    hunt, _mock_query = _hunt_with_mock_query()
+    hunt.on_crawl(lambda _packet: (_ for _ in ()).throw(RuntimeError("sink")))
+    stop_event = threading.Event()
+    hunt._poll_once_or_wait(stop_event)  # type: ignore[attr-defined]
+
+
+def test_poll_loop_survives_fetch_failure() -> None:
+    hunt, mock_query = _hunt_with_mock_query()
+    seen: list[HuntCrawlPacket] = []
+    hunt.on_crawl(lambda packet: seen.append(packet))
+    mock_query.side_effect = [
+        urllib.error.URLError("transient"),
+        [_sample_mark()],
+    ]
+
+    stop_event = threading.Event()
+    with patch("ff14_the_hunt.ff14_the_hunt.wait_or_stop", return_value=False):
+        hunt._poll_once_or_wait(stop_event)  # type: ignore[attr-defined]
+        hunt._poll_once_or_wait(stop_event)  # type: ignore[attr-defined]
+
+    assert mock_query.call_count == 2
+    assert len(seen) == 1
 
 
 def test_wait_or_stop_wakes_early_on_stop() -> None:

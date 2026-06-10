@@ -5,6 +5,8 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+from ff14_the_hunt.common.urlopen_retry import urlopen_read
+
 DEFAULT_BASE_URL = "https://tracker.beartoolkit.com/api"
 
 
@@ -97,11 +99,7 @@ class BearTrackerClient:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(
-                request,
-                timeout=self._timeout_seconds,
-            ) as response:
-                raw = response.read()
+            raw = urlopen_read(request, timeout=self._timeout_seconds)
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(
