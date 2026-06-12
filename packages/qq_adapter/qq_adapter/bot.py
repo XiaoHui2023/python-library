@@ -5,7 +5,7 @@ import time
 from collections import OrderedDict
 from contextlib import suppress
 from datetime import datetime, timedelta, timezone
-from typing import Callable, Awaitable, Optional
+from typing import Any, Callable, Awaitable, Optional
 
 VoidCallback = Callable[[], Awaitable[None]]
 DisconnectCallback = Callable[[str], Awaitable[None]]
@@ -16,9 +16,19 @@ from .models import QQMediaAttachment, QQSource, EVENT_SOURCE_MAP, QQMessage
 DEFAULT_INTENTS = (1 << 0) | (1 << 1) | (1 << 25) | (1 << 30)
 
 MSG_DEDUP_CACHE_SIZE = 1000
+API_REQUEST_ATTEMPTS = 3
+API_REQUEST_TIMEOUT_SECONDS = 15
+API_RETRY_DELAYS = (1.0, 3.0)
 
 API_BASE = "https://api.sgroup.qq.com"
 AUTH_URL = "https://bots.qq.com/app/getAppAccessToken"
+RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
+RETRYABLE_EXCEPTIONS = (
+    aiohttp.ClientError,
+    asyncio.TimeoutError,
+    TimeoutError,
+    OSError,
+)
 
 
 class QQBot:
@@ -148,11 +158,14 @@ class QQBot:
         ):
             return self._access_token
 
-        async with self._http.post(AUTH_URL, json={
-            "appId": self.app_id,
-            "clientSecret": self.app_secret,
-        }, proxy=self.proxy) as resp:
-            data = await resp.json()
+        data = await self._request_json(
+            "POST",
+            AUTH_URL,
+            json={
+                "appId": self.app_id,
+                "clientSecret": self.app_secret,
+            },
+        )
 
         if "access_token" not in data:
             raise RuntimeError(f"鉴权失败: {data}")
@@ -178,20 +191,54 @@ class QQBot:
 
     async def _api_get(self, path: str) -> dict:
         headers = await self._auth_headers()
-        async with self._http.get(
-            f"{API_BASE}{path}", headers=headers, proxy=self.proxy
-        ) as resp:
-            return await resp.json()
+        return await self._request_json("GET", f"{API_BASE}{path}", headers=headers)
 
     async def _api_post(self, path: str, body: dict) -> dict:
         headers = await self._auth_headers()
-        async with self._http.post(
-            f"{API_BASE}{path}", headers=headers, json=body, proxy=self.proxy
-        ) as resp:
-            text = await resp.text()
-            if resp.status >= 400:
-                raise RuntimeError(f"QQ API POST {path} failed: {resp.status} {text[:200]}")
-            return json.loads(text) if text else {}
+        return await self._request_json(
+            "POST",
+            f"{API_BASE}{path}",
+            headers=headers,
+            json=body,
+        )
+
+    async def _request_json(self, method: str, url: str, **kwargs: Any) -> dict:
+        timeout = aiohttp.ClientTimeout(total=API_REQUEST_TIMEOUT_SECONDS)
+        last_error: BaseException | None = None
+        for attempt in range(API_REQUEST_ATTEMPTS):
+            try:
+                async with self._http.request(
+                    method,
+                    url,
+                    proxy=self.proxy,
+                    timeout=timeout,
+                    **kwargs,
+                ) as resp:
+                    text = await resp.text()
+                    if resp.status in RETRYABLE_STATUS:
+                        error = RuntimeError(
+                            f"QQ API {method} {url} failed: {resp.status} {text[:200]}"
+                        )
+                        if attempt < API_REQUEST_ATTEMPTS - 1:
+                            last_error = error
+                            await asyncio.sleep(API_RETRY_DELAYS[attempt])
+                            continue
+                        raise error
+                    if resp.status >= 400:
+                        raise RuntimeError(
+                            f"QQ API {method} {url} failed: {resp.status} {text[:200]}"
+                        )
+                    return json.loads(text) if text else {}
+            except RETRYABLE_EXCEPTIONS as exc:
+                if attempt >= API_REQUEST_ATTEMPTS - 1:
+                    raise RuntimeError(
+                        f"QQ API {method} {url} failed after "
+                        f"{API_REQUEST_ATTEMPTS} attempts: {exc}"
+                    ) from exc
+                last_error = exc
+                await asyncio.sleep(API_RETRY_DELAYS[attempt])
+
+        raise RuntimeError(f"QQ API {method} {url} failed: {last_error}")
 
     async def reply_guild(self, channel_id: str, msg_id: str, content: str):
         await self._api_post(f"/channels/{channel_id}/messages", {
