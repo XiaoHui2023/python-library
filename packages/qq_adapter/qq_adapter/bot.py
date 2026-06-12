@@ -11,7 +11,7 @@ VoidCallback = Callable[[], Awaitable[None]]
 DisconnectCallback = Callable[[str], Awaitable[None]]
 ErrorCallback = Callable[[BaseException], Awaitable[None]]
 import aiohttp
-from .models import QQSource, EVENT_SOURCE_MAP, QQMessage
+from .models import QQMediaAttachment, QQSource, EVENT_SOURCE_MAP, QQMessage
 
 DEFAULT_INTENTS = (1 << 0) | (1 << 1) | (1 << 25) | (1 << 30)
 
@@ -189,6 +189,8 @@ class QQBot:
             f"{API_BASE}{path}", headers=headers, json=body, proxy=self.proxy
         ) as resp:
             text = await resp.text()
+            if resp.status >= 400:
+                raise RuntimeError(f"QQ API POST {path} failed: {resp.status} {text[:200]}")
             return json.loads(text) if text else {}
 
     async def reply_guild(self, channel_id: str, msg_id: str, content: str):
@@ -217,6 +219,76 @@ class QQBot:
             "timestamp": int(time.time()),
         })
 
+    async def upload_group_media(
+        self,
+        group_openid: str,
+        media: QQMediaAttachment,
+    ) -> str:
+        result = await self._api_post(
+            f"/v2/groups/{group_openid}/files",
+            self._media_upload_body(media),
+        )
+        return str(result.get("file_info", ""))
+
+    async def upload_c2c_media(
+        self,
+        openid: str,
+        media: QQMediaAttachment,
+    ) -> str:
+        result = await self._api_post(
+            f"/v2/users/{openid}/files",
+            self._media_upload_body(media),
+        )
+        return str(result.get("file_info", ""))
+
+    async def reply_group_media(
+        self,
+        group_openid: str,
+        msg_id: str,
+        content: str,
+        file_info: str,
+        msg_seq: int = 1,
+    ) -> None:
+        await self._api_post(f"/v2/groups/{group_openid}/messages", {
+            "msg_type": 7,
+            "content": content or " ",
+            "msg_id": msg_id,
+            "msg_seq": msg_seq,
+            "media": {"file_info": file_info},
+            "timestamp": int(time.time()),
+        })
+
+    async def reply_c2c_media(
+        self,
+        openid: str,
+        msg_id: str,
+        content: str,
+        file_info: str,
+        msg_seq: int = 1,
+    ) -> None:
+        body = {
+            "msg_type": 7,
+            "msg_id": msg_id,
+            "msg_seq": msg_seq,
+            "media": {"file_info": file_info},
+            "timestamp": int(time.time()),
+        }
+        if content:
+            body["content"] = content
+        await self._api_post(f"/v2/users/{openid}/messages", body)
+
+    @staticmethod
+    def _media_upload_body(media: QQMediaAttachment) -> dict[str, object]:
+        body: dict[str, object] = {
+            "file_type": media.file_type,
+            "srv_send_msg": False,
+        }
+        if media.url:
+            body["url"] = media.url
+        if media.file_data:
+            body["file_data"] = media.file_data
+        return body
+
     def next_seq(self, key: str) -> int:
         """为群聊或单聊回复递增序号，满足平台去重要求。
 
@@ -241,18 +313,72 @@ class QQBot:
             if msg.source_id in self._source:
                 source_type = self._source[msg.source_id]
             else:
-                return
+                raise RuntimeError(f"未知的 QQ 消息来源: {msg.source_id}")
 
         if source_type == QQSource.GUILD:
             await self.reply_guild(msg.source_id, msg.msg_id, msg.content)
         elif source_type == QQSource.GROUP:
-            seq = self.next_seq(msg.source_id)
-            await self.reply_group(msg.source_id, msg.msg_id, msg.content, seq)
+            await self._send_group(msg)
         elif source_type == QQSource.C2C:
-            seq = self.next_seq(msg.source_id)
-            await self.reply_c2c(msg.source_id, msg.msg_id, msg.content, seq)
+            await self._send_c2c(msg)
         else:
             return
+
+    async def _send_group(self, msg: QQMessage) -> None:
+        if not msg.media:
+            seq = self.next_seq(msg.source_id)
+            await self.reply_group(msg.source_id, msg.msg_id, msg.content, seq)
+            return
+        await self._send_group_media(msg)
+
+    async def _send_c2c(self, msg: QQMessage) -> None:
+        if not msg.media:
+            seq = self.next_seq(msg.source_id)
+            await self.reply_c2c(msg.source_id, msg.msg_id, msg.content, seq)
+            return
+        await self._send_c2c_media(msg)
+
+    async def _send_group_media(self, msg: QQMessage) -> None:
+        pending_text = msg.content
+        sent_any = False
+        for media in msg.media:
+            file_info = await self.upload_group_media(msg.source_id, media)
+            if not file_info:
+                continue
+            seq = self.next_seq(msg.source_id)
+            await self.reply_group_media(
+                msg.source_id,
+                msg.msg_id,
+                pending_text,
+                file_info,
+                seq,
+            )
+            pending_text = ""
+            sent_any = True
+        if not sent_any and msg.content:
+            seq = self.next_seq(msg.source_id)
+            await self.reply_group(msg.source_id, msg.msg_id, msg.content, seq)
+
+    async def _send_c2c_media(self, msg: QQMessage) -> None:
+        pending_text = msg.content
+        sent_any = False
+        for media in msg.media:
+            file_info = await self.upload_c2c_media(msg.source_id, media)
+            if not file_info:
+                continue
+            seq = self.next_seq(msg.source_id)
+            await self.reply_c2c_media(
+                msg.source_id,
+                msg.msg_id,
+                pending_text,
+                file_info,
+                seq,
+            )
+            pending_text = ""
+            sent_any = True
+        if not sent_any and msg.content:
+            seq = self.next_seq(msg.source_id)
+            await self.reply_c2c(msg.source_id, msg.msg_id, msg.content, seq)
 
     def _build_request(self, event_type: str, data: dict) -> Optional[QQMessage]:
         message_source = EVENT_SOURCE_MAP.get(event_type)

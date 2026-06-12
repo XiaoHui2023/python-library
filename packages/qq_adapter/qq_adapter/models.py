@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 
@@ -19,6 +19,22 @@ EVENT_SOURCE_MAP: dict[str, QQSource] = {
 
 
 @dataclass
+class QQMediaAttachment:
+    """QQ 富媒体发送前的本地附件描述。"""
+
+    file_type: int
+    """媒体类型：1 图片，2 视频，3 语音，4 文件。"""
+    url: str = ""
+    """远端媒体地址。"""
+    file_data: str = ""
+    """base64 编码的媒体二进制。"""
+    name: str | None = None
+    """显示文件名。"""
+    mime_type: str | None = None
+    """媒体 MIME 类型。"""
+
+
+@dataclass
 class QQMessage:
     """包内使用的 QQ 入站/出站消息结构。"""
 
@@ -36,3 +52,5 @@ class QQMessage:
     """机器人 ID。"""
     user_id: str | None = None
     """发送方用户 ID。"""
+    media: list[QQMediaAttachment] = field(default_factory=list)
+    """待发送的富媒体附件。"""

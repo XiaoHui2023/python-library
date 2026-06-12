@@ -1,7 +1,48 @@
 from onebot_protocol import MessagePayload
 
-from qq_adapter.models import QQMessage, QQSource
+from qq_adapter.models import QQMediaAttachment, QQMessage, QQSource
 from qq_adapter.parse_tag import content_to_messages, messages_to_content
+
+
+def _image_attachment(
+    content: str,
+    *,
+    name: str | None,
+    mime_type: str | None,
+) -> QQMediaAttachment | None:
+    text = content.strip()
+    if not text:
+        return None
+    if text.startswith(("http://", "https://")):
+        return QQMediaAttachment(
+            file_type=1,
+            url=text,
+            name=name,
+            mime_type=mime_type,
+        )
+    if text.startswith("data:") and "," in text:
+        text = text.split(",", 1)[1]
+    return QQMediaAttachment(
+        file_type=1,
+        file_data=text,
+        name=name,
+        mime_type=mime_type,
+    )
+
+
+def _messages_to_media(payload: MessagePayload) -> list[QQMediaAttachment]:
+    media: list[QQMediaAttachment] = []
+    for segment in payload.message:
+        if segment.type != "image":
+            continue
+        attachment = _image_attachment(
+            segment.data.content or "",
+            name=segment.data.name,
+            mime_type=segment.data.mime_type,
+        )
+        if attachment is not None:
+            media.append(attachment)
+    return media
 
 
 def onebot_to_qq(payload: MessagePayload) -> QQMessage:
@@ -14,7 +55,9 @@ def onebot_to_qq(payload: MessagePayload) -> QQMessage:
         含平台正文字符串的包内消息对象
     """
     source_type: QQSource | None = None
-    if payload.message_type == "private":
+    if payload.message_type == "group":
+        source_type = QQSource.GROUP
+    elif payload.message_type == "private":
         source_type = QQSource.C2C
     peer_id = payload.peer_id
     return QQMessage(
@@ -25,6 +68,7 @@ def onebot_to_qq(payload: MessagePayload) -> QQMessage:
         source_type=source_type,
         bot_id=payload.self_id,
         user_id=payload.user_id,
+        media=_messages_to_media(payload),
     )
 
 
