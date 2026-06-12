@@ -60,17 +60,9 @@ class NapCatSendFailuresTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(client.group_calls, 3)
 
-    async def test_mixed_message_keeps_text_when_image_send_times_out(self) -> None:
+    async def test_text_image_text_sends_as_one_message(self) -> None:
         bot = Bot(ws_url="ws://127.0.0.1:3001")
-        client = _RetryingClient(
-            [
-                {"message_id": 1},
-                TimeoutError(),
-                TimeoutError(),
-                TimeoutError(),
-                {"message_id": 2},
-            ],
-        )
+        client = _RetryingClient([{"message_id": 1}])
         bot._client = client  # type: ignore[assignment]
         message = BotMessage(
             message_id="m1",
@@ -88,8 +80,8 @@ class NapCatSendFailuresTest(unittest.IsolatedAsyncioTestCase):
         with patch("napcat_adapter.bot.SEND_RETRY_DELAYS", (0, 0)):
             await bot.send(message)
 
-        self.assertEqual(client.group_calls, 5)
-        self.assertEqual([len(batch) for batch in client.group_messages], [1, 1, 1, 1, 1])
+        self.assertEqual(client.group_calls, 1)
+        self.assertEqual([len(batch) for batch in client.group_messages], [3])
 
     async def test_image_only_message_raises_when_image_send_times_out(self) -> None:
         bot = Bot(ws_url="ws://127.0.0.1:3001")

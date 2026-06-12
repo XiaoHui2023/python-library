@@ -21,6 +21,7 @@ SEND_RETRY_EXCEPTIONS = (
     OSError,
 )
 FILE_LIKE_SEGMENT_TYPES = frozenset({"image", "record", "file", "video"})
+ISOLATED_SEND_SEGMENT_TYPES = frozenset({"record", "file", "video"})
 
 
 class Bot(BaseModel):
@@ -304,7 +305,7 @@ def _split_send_batches(data_list: list[dict[str, Any]]) -> list[list[dict[str, 
     batches: list[list[dict[str, Any]]] = []
     pending: list[dict[str, Any]] = []
     for data in data_list:
-        if _has_file_like_segment([data]):
+        if data.get("type") in ISOLATED_SEND_SEGMENT_TYPES:
             if pending:
                 batches.append(pending)
                 pending = []
