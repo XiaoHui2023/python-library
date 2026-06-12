@@ -12,6 +12,15 @@ from napcat_adapter.models import BotMessage, MessageType
 VoidCallback = Callable[[], Awaitable[None]]
 DisconnectCallback = Callable[[str], Awaitable[None]]
 ErrorCallback = Callable[[BaseException], Awaitable[None]]
+SEND_ATTEMPTS = 3
+SEND_RETRY_DELAYS = (1.0, 3.0)
+SEND_RETRY_EXCEPTIONS = (
+    TimeoutError,
+    asyncio.TimeoutError,
+    ConnectionError,
+    OSError,
+)
+FILE_LIKE_SEGMENT_TYPES = frozenset({"image", "record", "file", "video"})
 
 
 class Bot(BaseModel):
@@ -218,18 +227,47 @@ class Bot(BaseModel):
             {"type": segment["type"], "data": segment.get("data", {})}
             for segment in message.data_list
         ]
-        messages = _to_napcat_messages(data_list)
-        if not messages:
+        sent_any = False
+        first_error: BaseException | None = None
+        for batch in _split_send_batches(data_list):
+            messages = _to_napcat_messages(batch)
+            if not messages:
+                continue
+            try:
+                await self._send_with_retry(message, messages)
+                sent_any = True
+            except Exception as exc:
+                if first_error is None:
+                    first_error = exc
+                if not _has_file_like_segment(batch):
+                    raise
+
+        if not sent_any:
+            if first_error is not None:
+                raise RuntimeError("NapCat message has no sendable segments sent") from first_error
             raise RuntimeError("NapCat message has no sendable segments")
 
-        if message.message_type == MessageType.GROUP:
-            await self._client.send_group_msg(
-                group_id=message.session_id, message=messages
-            )
-        else:
-            await self._client.send_private_msg(
-                user_id=message.session_id, message=messages
-            )
+    async def _send_with_retry(self, message: BotMessage, messages: list[Message]) -> None:
+        last_error: BaseException | None = None
+        for attempt in range(SEND_ATTEMPTS):
+            try:
+                if message.message_type == MessageType.GROUP:
+                    await self._client.send_group_msg(
+                        group_id=message.session_id, message=messages
+                    )
+                else:
+                    await self._client.send_private_msg(
+                        user_id=message.session_id, message=messages
+                    )
+                return
+            except SEND_RETRY_EXCEPTIONS as exc:
+                if attempt >= SEND_ATTEMPTS - 1:
+                    raise RuntimeError(
+                        f"NapCat send failed after {SEND_ATTEMPTS} attempts"
+                    ) from exc
+                last_error = exc
+                await asyncio.sleep(SEND_RETRY_DELAYS[attempt])
+        raise RuntimeError(f"NapCat send failed: {last_error}")
 
     async def stop(self) -> None:
         """停止客户端并结束事件循环。"""
@@ -260,3 +298,26 @@ def _to_napcat_messages(data_list: list[dict[str, Any]]) -> list[Message]:
             continue
         messages.append(segment)
     return messages
+
+
+def _split_send_batches(data_list: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    batches: list[list[dict[str, Any]]] = []
+    pending: list[dict[str, Any]] = []
+    for data in data_list:
+        if _has_file_like_segment([data]):
+            if pending:
+                batches.append(pending)
+                pending = []
+            batches.append([data])
+        else:
+            pending.append(data)
+    if pending:
+        batches.append(pending)
+    return batches
+
+
+def _has_file_like_segment(data_list: list[dict[str, Any]]) -> bool:
+    for data in data_list:
+        if data.get("type") in FILE_LIKE_SEGMENT_TYPES:
+            return True
+    return False
