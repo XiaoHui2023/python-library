@@ -153,6 +153,13 @@ def _file_data_to_cq(data: FileSegmentData) -> dict:
     content = data.content
     if not content:
         return out
+    if content.startswith("data:") and "," in content:
+        content = "base64://" + content.split(",", 1)[1]
+    elif (
+        data.mime_type
+        and not content.startswith(("http://", "https://", "file://", "base64://"))
+    ):
+        content = "base64://" + content
     out["file"] = content
     if content.startswith(("http://", "https://")):
         out["url"] = content

@@ -212,7 +212,7 @@ class Bot(BaseModel):
             message: 含会话类型与 data_list 的包内消息
         """
         if self._client is None or not self._client.is_running:
-            return
+            raise RuntimeError("NapCat client is not connected")
 
         data_list = [
             {"type": segment["type"], "data": segment.get("data", {})}
@@ -220,19 +220,16 @@ class Bot(BaseModel):
         ]
         messages = _to_napcat_messages(data_list)
         if not messages:
-            return
+            raise RuntimeError("NapCat message has no sendable segments")
 
-        try:
-            if message.message_type == MessageType.GROUP:
-                await self._client.send_group_msg(
-                    group_id=message.session_id, message=messages
-                )
-            else:
-                await self._client.send_private_msg(
-                    user_id=message.session_id, message=messages
-                )
-        except Exception:
-            pass
+        if message.message_type == MessageType.GROUP:
+            await self._client.send_group_msg(
+                group_id=message.session_id, message=messages
+            )
+        else:
+            await self._client.send_private_msg(
+                user_id=message.session_id, message=messages
+            )
 
     async def stop(self) -> None:
         """停止客户端并结束事件循环。"""
