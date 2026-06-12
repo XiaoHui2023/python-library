@@ -171,27 +171,29 @@ class Bot(BaseModel):
         Args:
             message: 含会话类型与 data_list 的包内消息
         """
+        if self._bot is None:
+            raise RuntimeError("Lagrange bot is not running")
+
         data_list = [
             {"type": segment["type"], "data": segment.get("data", {})}
             for segment in message.data_list
         ]
+        if not data_list:
+            raise RuntimeError("Lagrange message has no sendable segments")
 
-        try:
-            sid = int(message.session_id)
-            if message.message_type == MessageType.GROUP:
-                await self._bot.send_msg(
-                    message_type="group",
-                    group_id=sid,
-                    message=data_list,
-                )
-            else:
-                await self._bot.send_msg(
-                    message_type="private",
-                    user_id=sid,
-                    message=data_list,
-                )
-        except Exception:
-            pass
+        sid = int(message.session_id)
+        if message.message_type == MessageType.GROUP:
+            await self._bot.send_msg(
+                message_type="group",
+                group_id=sid,
+                message=data_list,
+            )
+        else:
+            await self._bot.send_msg(
+                message_type="private",
+                user_id=sid,
+                message=data_list,
+            )
 
     async def stop(self) -> None:
         """触发关闭并结束常驻运行。"""
