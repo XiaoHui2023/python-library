@@ -153,5 +153,24 @@ class FF14News:
         try:
             feed = channel.fetch_articles(limit=limit, page_index=page_index)
         except Exception as exc:
-            return channel_id, None, str(exc)
+            return channel_id, None, _format_exception_chain(exc)
         return channel_id, feed, None
+
+
+def _format_exception_chain(exc: BaseException) -> str:
+    parts: list[str] = []
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        parts.append(_format_exception(current))
+        current = current.__cause__ or (
+            None if current.__suppress_context__ else current.__context__
+        )
+    return " | caused by: ".join(parts)
+
+
+def _format_exception(exc: BaseException) -> str:
+    exc_type = type(exc).__name__
+    message = str(exc).strip()
+    return f"{exc_type}: {message}" if message else exc_type

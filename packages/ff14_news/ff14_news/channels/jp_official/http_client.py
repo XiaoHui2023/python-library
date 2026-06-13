@@ -15,4 +15,8 @@ def fetch_html(url: str, *, timeout_seconds: float) -> str:
         raw = urlopen_read(req, timeout=timeout_seconds)
     except urllib.error.HTTPError as exc:
         raise ValueError(f"HTTP {exc.code} for {url}") from exc
+    except Exception as exc:
+        raise RuntimeError(
+            f"failed to fetch HTML from {url} (timeout={timeout_seconds}s)"
+        ) from exc
     return raw.decode("utf-8", "replace")

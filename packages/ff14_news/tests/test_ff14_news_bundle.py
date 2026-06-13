@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from http.client import RemoteDisconnected
 from unittest.mock import MagicMock
 
 import pytest
@@ -84,3 +85,23 @@ def test_fetch_articles_collects_channel_errors(monkeypatch: pytest.MonkeyPatch)
     assert len(bundle.errors) == 1
     assert bundle.errors[0].channel_id == "cn_official"
     assert "network down" in bundle.errors[0].message
+
+
+def test_fetch_articles_error_message_includes_exception_chain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    news = FF14News(enable_cn_official=True, enable_cn_weibo=False, enable_jp_official=False)
+    failing = MagicMock()
+    failing.fetch_articles.side_effect = RuntimeError(
+        "failed to fetch HTML from https://example.test/topics/ (timeout=120.0s)"
+    )
+    failing.fetch_articles.side_effect.__cause__ = RemoteDisconnected(
+        "Remote end closed connection without response"
+    )
+    monkeypatch.setattr(news, "_channels", {"cn_official": failing})
+
+    bundle = news.fetch_articles(limit=2)
+
+    message = bundle.errors[0].message
+    assert "RuntimeError: failed to fetch HTML from https://example.test/topics/" in message
+    assert "RemoteDisconnected: Remote end closed connection without response" in message
