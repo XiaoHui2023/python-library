@@ -70,4 +70,4 @@ def test_workflow_passes_page_sort_and_time_filter(mock_parse) -> None:
     assert params["page"] == 1
     assert params["sort_type"] == "general"
     assert params["time_filter"] == "一天内"
-    assert params["keyword"] == "#搞笑日常#"
+    assert params["keyword"] == "#搞笑#"

@@ -8,7 +8,7 @@ pipeline:
 
 xiaohongshu:
   search_tags:
-    - 搞笑日常
+    - 搞笑
   page: 1
   sort_type: general
   time_filter: 一天内

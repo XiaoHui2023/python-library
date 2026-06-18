@@ -54,7 +54,7 @@ DEFAULT_PLATFORMS = [
 ]
 
 DEFAULT_XHS_SEARCH_TAGS: tuple[str, ...] = (
-    "搞笑日常",
+    "搞笑",
 )
 
 
@@ -109,7 +109,7 @@ class ImageItem(BaseModel):
     community: str | None = Field(default=None, description="平台或频道标识")
     search_tag: str | None = Field(
         default=None,
-        description="拉取时使用的搜索话题 tag（如小红书 #搞笑日常# 的「搞笑日常」）",
+        description="拉取时使用的搜索话题 tag（如小红书 #搞笑# 的「搞笑」）",
     )
     score: float | None = Field(default=None, description="互动热度分数")
     created_at: datetime | None = Field(default=None, description="发布时间")
@@ -143,7 +143,7 @@ class XhsKeywordFetchStat(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    keyword: str = Field(description="搜索关键词，如 #搞笑日常#")
+    keyword: str = Field(description="搜索关键词，如 #搞笑#")
     search_tag: str = Field(description="话题 tag 名")
     api_list_items: int = Field(description="响应 data.items 列表长度")
     note_candidates: int = Field(description="识别到的笔记卡片数")
