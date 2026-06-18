@@ -4,7 +4,7 @@ from unittest.mock import patch
 from napcat_adapter.bot import Bot
 from napcat_adapter.models import BotMessage, MessageType
 from napcat_adapter.protocol_adapt import onebot_to_bot
-from onebot_protocol import ImageMessageSegment, MessagePayload
+from onebot_protocol import ImageMessageSegment, MentionAllMessageSegment, MessagePayload
 from onebot_protocol.models import ImageSegmentData
 
 
@@ -83,6 +83,27 @@ class NapCatSendFailuresTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.group_calls, 1)
         self.assertEqual([len(batch) for batch in client.group_messages], [3])
 
+    async def test_mention_all_reaches_napcat_as_at_all(self) -> None:
+        bot = Bot(ws_url="ws://127.0.0.1:3001")
+        client = _RetryingClient([{"message_id": 1}])
+        bot._client = client  # type: ignore[assignment]
+        payload = MessagePayload(
+            message_id="m1",
+            message_type="group",
+            self_id="10001",
+            group_id="12345",
+            message=[MentionAllMessageSegment()],
+        )
+
+        await bot.send(onebot_to_bot(payload))
+
+        self.assertEqual(client.group_calls, 1)
+        sent = client.group_messages[0]
+        self.assertEqual(len(sent), 1)
+        segment = dict(sent[0])
+        self.assertEqual(segment["type"], "at")
+        self.assertEqual(segment["data"]["qq"], "all")
+
     async def test_image_only_message_raises_when_image_send_times_out(self) -> None:
         bot = Bot(ws_url="ws://127.0.0.1:3001")
         client = _RetryingClient([TimeoutError(), TimeoutError(), TimeoutError()])
@@ -153,6 +174,20 @@ class NapCatProtocolAdaptTest(unittest.TestCase):
         message = onebot_to_bot(payload)
 
         self.assertEqual(message.data_list[0]["data"]["file"], "base64://cG5n")
+
+    def test_onebot_mention_all_uses_cq_at_all(self) -> None:
+        payload = MessagePayload(
+            message_id="m1",
+            message_type="group",
+            self_id="10001",
+            group_id="12345",
+            message=[MentionAllMessageSegment()],
+        )
+
+        message = onebot_to_bot(payload)
+
+        self.assertEqual(message.data_list[0]["type"], "at")
+        self.assertEqual(message.data_list[0]["data"]["qq"], "all")
 
 
 if __name__ == "__main__":

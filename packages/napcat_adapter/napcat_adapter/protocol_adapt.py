@@ -178,6 +178,8 @@ def _onebot_to_cq_segment(
     if isinstance(message, onebot_protocol.MentionMessageSegment):
         name = USER_MAP.get(message.data.user_id, "")
         return AtSegment(data={"qq": message.data.user_id, "name": name})
+    if isinstance(message, onebot_protocol.MentionAllMessageSegment):
+        return AtSegment(data={"qq": "all", "name": MENTION_ALL_NAME})
     if isinstance(message, onebot_protocol.ImageMessageSegment):
         cq_data = _file_data_to_cq(message.data)
         return ImageSegment(data=cq_data) if cq_data else None
