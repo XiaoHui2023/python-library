@@ -6,6 +6,8 @@ from pathlib import Path
 
 from .resolver import resolve_variables
 
+CsvData = list[dict[str, str]] | dict[str, dict[str, str]]
+
 SUFFIXES = {".csv"}
 
 
@@ -13,17 +15,17 @@ def is_csv(file_path: str) -> bool:
     return os.path.splitext(file_path)[1] in SUFFIXES
 
 
-def load_csv(file_path: str) -> list[dict[str, str]]:
+def load_csv(file_path: str) -> CsvData:
     data = load_csv_raw(file_path)
     return resolve_variables(data)
 
 
-def load_csv_raw(file_path: str) -> list[dict[str, str]]:
+def load_csv_raw(file_path: str) -> CsvData:
     text = Path(file_path).read_text(encoding="utf-8-sig")
     return _parse_csv_text(text, source=file_path)
 
 
-def _parse_csv_text(text: str, *, source: str) -> list[dict[str, str]]:
+def _parse_csv_text(text: str, *, source: str) -> CsvData:
     if not text.strip():
         raise ValueError(f"CSV 文件为空: {source}")
 
@@ -53,6 +55,9 @@ def _parse_csv_text(text: str, *, source: str) -> list[dict[str, str]]:
     header = rows[0]
     data_rows = rows[1:]
 
+    if not header[0]:
+        return _parse_keyed_dict_table(header, data_rows, source=source)
+
     if any(not name for name in header):
         raise ValueError(f"CSV 表头存在空列名: {source}")
 
@@ -76,6 +81,34 @@ def _parse_record_table(
     for _, row in _enumerate_data_rows(data_rows, source=source, width=width):
         records.append(dict(zip(header, row, strict=True)))
     return records
+
+
+def _parse_keyed_dict_table(
+    header: list[str],
+    data_rows: list[list[str]],
+    *,
+    source: str,
+) -> dict[str, dict[str, str]]:
+    item_keys = header[1:]
+    if any(not name for name in item_keys):
+        raise ValueError(f"CSV 字典表表头存在空列名: {source}")
+
+    seen_columns: set[str] = set()
+    for name in item_keys:
+        if name in seen_columns:
+            raise ValueError(f"CSV 字典表存在重复列名 {name!r}: {source}")
+        seen_columns.add(name)
+
+    result: dict[str, dict[str, str]] = {}
+    width = len(header)
+    for index, row in _enumerate_data_rows(data_rows, source=source, width=width):
+        key = row[0]
+        if not key:
+            raise ValueError(f"CSV 字典表第 {index} 行存在空键: {source}")
+        if key in result:
+            raise ValueError(f"CSV 字典表存在重复行键 {key!r}: {source}")
+        result[key] = dict(zip(item_keys, row[1:], strict=True))
+    return result
 
 
 def _enumerate_data_rows(

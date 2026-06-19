@@ -72,6 +72,34 @@ class CsvHelpersTests(unittest.TestCase):
             )
             self.assertEqual(load_csv(str(path))[0]["label"], "demo")
 
+    def test_keyed_dict_table(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "rules.csv"
+            path.write_text(
+                ",host,port\n"
+                "main,127.0.0.1,5432\n"
+                "backup,127.0.0.2,5433\n",
+                encoding="utf-8",
+            )
+            data = load_csv_raw(str(path))
+            self.assertEqual(
+                data,
+                {
+                    "main": {"host": "127.0.0.1", "port": "5432"},
+                    "backup": {"host": "127.0.0.2", "port": "5433"},
+                },
+            )
+
+    def test_keyed_dict_table_resolves_variables(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cfg.csv"
+            path.write_text(
+                ",name,label\n"
+                "app,demo,${..name}\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(load_csv(str(path))["app"]["label"], "demo")
+
 
 class CsvInvalidFormatTests(unittest.TestCase):
     def test_empty_file(self) -> None:
@@ -133,6 +161,40 @@ class CsvInvalidFormatTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(ValueError, "空列名"):
+                load_csv_raw(str(path))
+
+    def test_duplicate_column_in_keyed_dict_table(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bad.csv"
+            path.write_text(
+                ",name,name\n"
+                "app,a,b\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "重复列名"):
+                load_csv_raw(str(path))
+
+    def test_duplicate_row_key_in_keyed_dict_table(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bad.csv"
+            path.write_text(
+                ",host,port\n"
+                "app,127.0.0.1,5432\n"
+                "app,127.0.0.2,5433\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "重复行键"):
+                load_csv_raw(str(path))
+
+    def test_empty_row_key_in_keyed_dict_table(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bad.csv"
+            path.write_text(
+                ",host,port\n"
+                ",127.0.0.1,5432\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "空键"):
                 load_csv_raw(str(path))
 
     def test_config_loader_rejects_record_table_csv(self) -> None:
