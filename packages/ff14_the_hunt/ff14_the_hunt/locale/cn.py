@@ -152,7 +152,7 @@ def mark_to_display_dict(
                 "像素Y": point.pixel_y,
                 "格点X": point.grid_x,
                 "格点Y": point.grid_y,
-                "存活": point.active,
+                "可能触发": point.active,
             }
             for point in mark.spawn_points
         ]

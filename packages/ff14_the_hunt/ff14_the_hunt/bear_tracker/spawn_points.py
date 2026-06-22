@@ -41,12 +41,8 @@ def list_map_coordinates(
         norm_x = (grid_x - 1.0) / scale
         norm_y = (grid_y - 1.0) / scale
         state = None
-        if api_states and key in api_states:
-            entry = api_states[key]
-            if isinstance(entry, dict):
-                state_val = entry.get("State")
-                if state_val is not None:
-                    state = bool(state_val)
+        if api_states is not None:
+            state = key not in api_states
         coordinates.append(
             MapCoordinate(
                 point_key=key,

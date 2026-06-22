@@ -9,7 +9,6 @@ from ff14_the_hunt.bear_tracker.fate_timer import compute_fate_timer
 from ff14_the_hunt.bear_tracker.resources import BearResources
 from ff14_the_hunt.bear_tracker.spawn_window import (
     compute_trigger_timer,
-    is_recently_in_window,
 )
 
 
@@ -88,13 +87,10 @@ def build_hunt_record(
         now=now,
     )
 
-    recently = is_recently_in_window(trigger, grace_seconds=recent_grace_seconds)
-    if last_mark and now is not None:
-        if now - float(last_mark) <= recent_grace_seconds:
-            recently = True
-    elif last_mark:
-        if time.time() - float(last_mark) <= recent_grace_seconds:
-            recently = True
+    recently = False
+    if last_mark:
+        reference_now = time.time() if now is None else now
+        recently = reference_now - float(last_mark) <= recent_grace_seconds
 
     region = meta.get("Region", "")
     return HuntMarkRecord(

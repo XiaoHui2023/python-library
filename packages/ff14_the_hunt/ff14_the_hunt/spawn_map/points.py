@@ -4,11 +4,9 @@ from ff14_the_hunt.models import MapCoordinate
 
 
 def select_display_spawn_points(points: list[MapCoordinate]) -> list[MapCoordinate]:
-    """刚刷新记录上要展示的刷点；有存活点时只保留存活点。"""
+    """刚刷新记录上只展示仍可能触发的绿色候选点。"""
     active = [point for point in points if point.active is True]
-    if active:
-        return active
-    return list(points)
+    return active
 
 
 def resolve_region_name(region: str | list[str]) -> str:

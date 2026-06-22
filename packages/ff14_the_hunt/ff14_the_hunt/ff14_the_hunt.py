@@ -67,7 +67,7 @@ class FF14TheHunt:
             min_wakeup_seconds: 全未开窗时睡到最近开窗的下限（秒），默认 2 分钟。
             poll_interval_seconds: 已废弃；等同 ``fallback_poll_interval_seconds``。
             recent_grace_seconds: 「刚刷新」宽限秒数。
-            include_spawn_states: 已废弃；刚刷新记录的存活点会在补全刷点时自动查询。
+            include_spawn_states: 已废弃；刚刷新记录的候选点会在补全刷点时自动查询。
             include_spawn_maps: 为刚刷新记录拉取站点区域原图 PNG base64。
             include_untimed_marks: 是否保留无计时的占位行（SS 级噬灵王、维护占位等）。
         """

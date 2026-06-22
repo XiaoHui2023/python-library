@@ -66,9 +66,9 @@ example.bat
 | --- | --- |
 | `POST /api/syncSession` | 狩猎库、刷点坐标、数据中心/世界列表 |
 | `POST /api/lastDeathTimers` | 计时行；`RankType` 为 `aRank` / `sRank` / `fate` |
-| `POST /api/querySpawnPoints` | 刚刷新记录的各刷点存活状态（需 `LastDeath`） |
+| `POST /api/querySpawnPoints` | 刚刷新记录的非触发点认证状态（需 `LastDeath`） |
 
-刚刷新记录才填充 ``spawn_points``、``spawn_map_layout`` 与 ``region_map``。包内不标点、不裁剪；``region_map`` 为站点 ``HuntRegions`` 原图 base64。刷点含 ``地图X/Y``、``格点X/Y``、``像素X/Y``（按原图尺寸算好）；``地图布局`` 含格点尺度与归一化公式。默认 ``include_spawn_maps=True`` 拉取原图。示例 ``python -m example`` 将 PNG 写入 ``example/output/maps/``，JSON 用 ``区域地图.地图文件`` 引用。
+刚刷新记录才填充 ``spawn_points``、``spawn_map_layout`` 与 ``region_map``。包内不标点、不裁剪；``region_map`` 为站点 ``HuntRegions`` 原图 base64。刷点仅保留未被 Sonar 或玩家认证为非触发的绿色候选点，含 ``地图X/Y``、``格点X/Y``、``像素X/Y``（按原图尺寸算好）；``地图布局`` 含格点尺度与归一化公式。默认 ``include_spawn_maps=True`` 拉取原图。示例 ``python -m example`` 将 PNG 写入 ``example/output/maps/``，JSON 用 ``区域地图.地图文件`` 引用。
 
 `QueryDeathTimers` 为世界名列表（由所选数据中心展开）。
 

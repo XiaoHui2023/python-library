@@ -58,7 +58,7 @@ class MapCoordinate(BaseModel):
         default=None,
         description="区域原图上的 Y 像素；norm_y * 图高",
     )
-    active: bool | None = Field(default=None, description="querySpawnPoints 返回的存活点位状态")
+    active: bool | None = Field(default=None, description="是否仍是可能触发点位")
 
 
 class SpawnMapLayout(BaseModel):
@@ -127,7 +127,7 @@ class HuntMarkRecord(BaseModel):
     fate_timer: TimerDisplay | None = None
     spawn_points: list[MapCoordinate] = Field(
         default_factory=list,
-        description="仅刚刷新记录填充；有存活点时只保留存活点",
+        description="仅刚刷新记录填充；只保留可能触发点位",
     )
     spawn_map_layout: SpawnMapLayout | None = Field(
         default=None,
