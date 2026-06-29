@@ -4,6 +4,7 @@ import urllib.error
 from unittest.mock import MagicMock, patch
 
 from ff14_the_hunt import FF14TheHunt, HuntCrawlPacket, HuntQueryFilter, HuntRankKind
+from ff14_the_hunt.bear_tracker.client import BearTrackerBlockedError
 from ff14_the_hunt.bear_tracker.timer_theme import build_timer_display
 from ff14_the_hunt.models import (
     HuntMarkRecord,
@@ -134,6 +135,21 @@ def test_poll_loop_survives_fetch_failure() -> None:
 
     assert mock_query.call_count == 2
     assert len(seen) == 1
+
+
+def test_poll_loop_uses_blocked_retry_after() -> None:
+    hunt, mock_query = _hunt_with_mock_query()
+    mock_query.side_effect = BearTrackerBlockedError(
+        "blocked",
+        status_code=429,
+        retry_after_seconds=180.0,
+    )
+    stop_event = threading.Event()
+
+    with patch("ff14_the_hunt.ff14_the_hunt.wait_or_stop", return_value=False) as wait:
+        hunt._poll_once_or_wait(stop_event)  # type: ignore[attr-defined]
+
+    wait.assert_called_once_with(stop_event, 180.0)
 
 
 def test_wait_or_stop_wakes_early_on_stop() -> None:

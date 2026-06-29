@@ -12,6 +12,7 @@ import urllib.request
 from pathlib import Path
 
 from ff14_the_hunt import FF14TheHunt
+from ff14_the_hunt.common.http_request import DEFAULT_USER_AGENT
 
 DATAMINING_BASE = (
     "https://cdn.jsdelivr.net/gh/InfSein/ffxiv-datamining-mixed@master"
@@ -28,7 +29,7 @@ HUNT_PREFIX_ZH: dict[str, str] = {
 def _download_text(url: str, *, timeout: float = 180.0) -> str:
     request = urllib.request.Request(
         url,
-        headers={"User-Agent": "python-library-ff14-the-hunt"},
+        headers={"User-Agent": DEFAULT_USER_AGENT},
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return response.read().decode("utf-8-sig")

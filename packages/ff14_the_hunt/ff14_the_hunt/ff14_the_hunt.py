@@ -5,9 +5,13 @@ import threading
 import time
 from collections.abc import Callable
 
-from ff14_the_hunt.bear_tracker.client import BearTrackerClient
+from ff14_the_hunt.bear_tracker.client import (
+    BearTrackerBlockedError,
+    BearTrackerClient,
+)
 from ff14_the_hunt.bear_tracker.enrich import build_hunt_record, mark_has_display_timer
 from ff14_the_hunt.bear_tracker.resources import BearResources
+from ff14_the_hunt.common.http_request import DEFAULT_USER_AGENT
 from ff14_the_hunt.locale.cn import normalize_patch_codes
 from ff14_the_hunt.models import (
     HuntCrawlPacket,
@@ -24,6 +28,7 @@ HuntCrawlCallback = Callable[[HuntCrawlPacket], None]
 
 _log = logging.getLogger(__name__)
 _FETCH_FAILURE_RETRY_SECONDS = 60.0
+_BLOCKED_RETRY_SECONDS = 900.0
 
 
 class FF14TheHunt:
@@ -40,6 +45,8 @@ class FF14TheHunt:
         regions: list[str] | None = None,
         base_url: str | None = None,
         timeout_seconds: float = 120.0,
+        min_request_interval_seconds: float = 1.0,
+        user_agent: str = DEFAULT_USER_AGENT,
         active_poll_interval_seconds: float = 600.0,
         recent_poll_interval_seconds: float = 300.0,
         fallback_poll_interval_seconds: float = 1800.0,
@@ -71,7 +78,11 @@ class FF14TheHunt:
             include_spawn_maps: 为刚刷新记录拉取站点区域原图 PNG base64。
             include_untimed_marks: 是否保留无计时的占位行（SS 级噬灵王、维护占位等）。
         """
-        kwargs: dict[str, float | str] = {"timeout_seconds": timeout_seconds}
+        kwargs: dict[str, float | str] = {
+            "timeout_seconds": timeout_seconds,
+            "min_request_interval_seconds": min_request_interval_seconds,
+            "user_agent": user_agent,
+        }
         if base_url is not None:
             kwargs["base_url"] = base_url
         self._client = BearTrackerClient(**kwargs)
@@ -291,6 +302,8 @@ class FF14TheHunt:
             self._map_fetcher = RegionMapFetcher(
                 site_root=site_root_from_api_base(self._client.base_url),
                 timeout_seconds=self._client.timeout_seconds,
+                min_request_interval_seconds=self._client.min_request_interval_seconds,
+                user_agent=self._client.user_agent,
             )
         return self._map_fetcher
 
@@ -340,6 +353,20 @@ class FF14TheHunt:
             marks = self._scheduler.fetch()
         except (KeyboardInterrupt, SystemExit):
             raise
+        except BearTrackerBlockedError as exc:
+            retry_seconds = (
+                exc.retry_after_seconds
+                if exc.retry_after_seconds is not None
+                else _BLOCKED_RETRY_SECONDS
+            )
+            retry_seconds = max(retry_seconds, _FETCH_FAILURE_RETRY_SECONDS)
+            _log.warning(
+                "Bear Tracker refused crawl; retry in %s seconds: %s",
+                retry_seconds,
+                exc,
+            )
+            wait_or_stop(stop_event, retry_seconds)
+            return
         except Exception as exc:
             _log.warning("狩猎爬取失败，%s 秒后重试：%s", _FETCH_FAILURE_RETRY_SECONDS, exc)
             wait_or_stop(stop_event, _FETCH_FAILURE_RETRY_SECONDS)

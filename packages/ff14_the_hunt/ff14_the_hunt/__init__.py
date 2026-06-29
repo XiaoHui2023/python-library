@@ -1,4 +1,8 @@
 from ff14_the_hunt.ff14_the_hunt import FF14TheHunt
+from ff14_the_hunt.bear_tracker.client import (
+    BearTrackerBlockedError,
+    BearTrackerRequestError,
+)
 from ff14_the_hunt.bear_tracker.timer_theme import BEAR_TRACKER_BAR_HEX, bar_hex
 from ff14_the_hunt.models import (
     HuntCrawlPacket,
@@ -33,6 +37,8 @@ from ff14_the_hunt.poll import (
 
 __all__ = [
     "BEAR_TRACKER_BAR_HEX",
+    "BearTrackerBlockedError",
+    "BearTrackerRequestError",
     "FF14TheHunt",
     "HuntDisplayLocale",
     "HuntCrawlPacket",

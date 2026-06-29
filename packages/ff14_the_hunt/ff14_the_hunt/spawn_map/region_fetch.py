@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 
+from ff14_the_hunt.common.http_request import DEFAULT_USER_AGENT
 from ff14_the_hunt.common.urlopen_retry import urlopen_read
 
 
@@ -30,9 +33,15 @@ class RegionMapFetcher:
         *,
         site_root: str,
         timeout_seconds: float = 120.0,
+        min_request_interval_seconds: float = 1.0,
+        user_agent: str = DEFAULT_USER_AGENT,
     ) -> None:
         self._site_root = site_root.rstrip("/")
         self._timeout_seconds = timeout_seconds
+        self._min_request_interval_seconds = min_request_interval_seconds
+        self._user_agent = user_agent
+        self._last_request_at = 0.0
+        self._request_lock = threading.Lock()
         self._cache: dict[str, bytes] = {}
 
     @property
@@ -58,12 +67,15 @@ class RegionMapFetcher:
         request = urllib.request.Request(
             url,
             headers={
-                "User-Agent": "python-library-ff14-the-hunt",
+                "User-Agent": self._user_agent,
+                "Accept": "image/avif,image/webp,image/apng,image/png,image/*,*/*;q=0.8",
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
                 "Referer": f"{self._site_root}/timer",
             },
             method="GET",
         )
         try:
+            self._pace_request()
             data = urlopen_read(request, timeout=self._timeout_seconds)
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
@@ -74,3 +86,15 @@ class RegionMapFetcher:
             raise RuntimeError(f"region map {region} failed: {exc}") from exc
         self._cache[region] = data
         return data
+
+    def _pace_request(self) -> None:
+        if self._min_request_interval_seconds <= 0:
+            return
+        with self._request_lock:
+            now = time.monotonic()
+            wait_seconds = self._min_request_interval_seconds - (
+                now - self._last_request_at
+            )
+            if wait_seconds > 0:
+                time.sleep(wait_seconds)
+            self._last_request_at = time.monotonic()
